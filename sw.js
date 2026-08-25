@@ -1,4 +1,4 @@
-const CACHE_NAME = 'campusflow-v1.0.0';
+const CACHE_NAME = 'campusflow-v1.0.1';
 const APP_SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.json', './favicon.svg'];
 
 self.addEventListener('install', (event) => {

@@ -6,7 +6,7 @@
   'use strict';
 
   const STORAGE_KEY = 'campusflow-state-v1';
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.0.1';
   const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
   const COLORS = ['teal', 'orange', 'purple', 'blue'];
   const PERIODS = [

@@ -14,7 +14,7 @@
 - 学期周次以 `profile.startDate` 所在周一为基准计算，而不是自然年周次；课表与总览使用同一学期周数。
 - 编辑日历事件时会根据原事件的 `type` 设置下拉框选项，保存后不会意外重置为“考试”。
 - JSON 导入会对 `tasks`、`courses` 及其他数组字段逐项回退旧数据；导入文件输入值会重置，因此可重复选择同一文件。
-- Service Worker 缓存键已升级为 `campusflow-v1.0.0`，激活时会清理旧版本缓存，避免长期命中旧静态资源。
+- Service Worker 缓存键已升级为 `campusflow-v1.0.1`，激活时会清理旧版本缓存，避免长期命中旧静态资源。
 - Service Worker 激活时只清理 `campusflow-*` 缓存，不会删除同一域名下其他 GitHub Pages 项目的离线缓存。
 
 ## 高优先级（本轮已修复）
