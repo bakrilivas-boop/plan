@@ -152,6 +152,7 @@
   let searchTerm = '';
   let focusTick = null;
   let lastFocusState = null;
+  let modalReturnFocus = null;
 
   function saveState() {
     state.updatedAt = new Date().toISOString();
@@ -467,13 +468,23 @@
     const backdrop = $('#modal-backdrop');
     const modal = $('#modal');
     if (!backdrop || !modal) return;
+    const active = document.activeElement;
+    modalReturnFocus = active && active !== document.body ? active : null;
     modal.innerHTML = `<div class="modal-head"><div><h2 id="modal-title">${title}</h2>${subtitle ? `<p>${subtitle}</p>` : ''}</div><button class="icon-btn" data-action="close-modal" aria-label="关闭">×</button></div>${body}`;
     backdrop.hidden = false;
-    const first = $('input, select, textarea, button', modal);
+    const first = $('form input:not([type="hidden"]), form select, form textarea, form button[type="submit"]', modal)
+      || $('[data-action="close-modal"]', modal);
     if (first) window.setTimeout(() => first.focus(), 20);
     modal.dataset.context = options && options.context ? options.context : '';
   }
-  function closeModal() { const backdrop = $('#modal-backdrop'); if (backdrop) backdrop.hidden = true; }
+  function closeModal() {
+    const backdrop = $('#modal-backdrop');
+    if (!backdrop || backdrop.hidden) return;
+    backdrop.hidden = true;
+    const returnFocus = modalReturnFocus;
+    modalReturnFocus = null;
+    if (returnFocus && returnFocus.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus();
+  }
 
   function taskForm(task) {
     const editing = Boolean(task);
@@ -724,7 +735,21 @@
   }
 
   function handleKeydown(event) {
-    if (event.key === 'Escape') { closeModal(); return; }
+    const backdrop = $('#modal-backdrop');
+    if (backdrop && !backdrop.hidden) {
+      if (event.key === 'Escape') { event.preventDefault(); closeModal(); return; }
+      if (event.key === 'Tab') {
+        const modal = $('#modal');
+        const focusable = modal ? $$('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])', modal).filter((element) => element.offsetParent !== null) : [];
+        if (!focusable.length) { event.preventDefault(); modal?.focus(); return; }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+      // Do not let global shortcuts mutate the page while a dialog is open.
+      if (event.key !== 'Tab') return;
+    }
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#global-search')?.focus(); return; }

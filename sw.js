@@ -8,7 +8,13 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+    // CacheStorage is shared by every app on an origin (including sibling
+    // GitHub Pages projects).  Only remove caches owned by CampusFlow;
+    // deleting every key here can invalidate unrelated apps' offline data.
+    caches.keys().then((keys) => Promise.all(
+      keys.filter((key) => key.startsWith('campusflow-') && key !== CACHE_NAME)
+        .map((key) => caches.delete(key))
+    )
   ));
   self.clients.claim();
 });

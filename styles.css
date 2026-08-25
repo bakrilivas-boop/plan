@@ -339,6 +339,37 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 @media (max-width: 420px) {
   .topbar-actions .icon-btn { display: none; }
+  /* Keep global search available on very narrow screens. The input used to
+     be display:none here, leaving an inert search glyph with no interaction. */
+  .search-box {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+    border-color: transparent;
+    background: transparent;
+    transition: width .18s ease, padding .18s ease, border-color .18s ease, background .18s ease;
+  }
+  .search-box input {
+    display: block;
+    width: 0;
+    min-width: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: width .18s ease, opacity .18s ease;
+  }
+  .search-box:focus-within {
+    width: min(150px, 42vw);
+    padding: 0 9px;
+    justify-content: flex-start;
+    border-color: var(--line);
+    background: var(--surface);
+  }
+  .search-box:focus-within input {
+    width: 100%;
+    opacity: 1;
+    pointer-events: auto;
+  }
   .date-pill { min-width: 34px; justify-content: center; }
   .welcome-card h2 { font-size: 23px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }

@@ -2,6 +2,8 @@
 
 一个无需安装依赖、打开浏览器即可使用的本地学习与生活计划工具。它把学期目标、任务、循环课表、日历事件、习惯打卡、笔记、专注计时和复盘统计放在同一个工作台里。
 
+在线体验：[bakrilivas-boop.github.io/plan](https://bakrilivas-boop.github.io/plan/)
+
 ## 快速开始
 
 - 直接双击 `index.html`：核心功能（包括本地保存、导入/导出）可用。
