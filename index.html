@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="description" content="CampusFlow：把课程、任务、习惯和复盘放在一起的大二计划工具。" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.json" />
+    <title>大二计划 · CampusFlow</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell" id="app">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div class="brand-mark">C</div>
+          <div>
+            <strong>CampusFlow</strong>
+            <span>我的大二计划</span>
+          </div>
+        </div>
+
+        <div class="semester-chip" id="semester-chip">
+          <span class="status-dot"></span>
+          <span class="semester-label">大二上学期</span>
+          <button class="icon-btn subtle" data-action="edit-semester" aria-label="编辑学期">✎</button>
+        </div>
+
+        <nav class="main-nav" aria-label="主导航">
+          <button class="nav-item active" data-view="dashboard"><span class="nav-icon">⌂</span><span>总览</span></button>
+          <button class="nav-item" data-view="planner"><span class="nav-icon">✓</span><span>计划与任务</span><span class="nav-count" id="todo-count">0</span></button>
+          <button class="nav-item" data-view="timetable"><span class="nav-icon">▦</span><span>我的课表</span></button>
+          <button class="nav-item" data-view="calendar"><span class="nav-icon">◫</span><span>日历</span></button>
+          <button class="nav-item" data-view="habits"><span class="nav-icon">◒</span><span>日常习惯</span></button>
+          <button class="nav-item" data-view="notes"><span class="nav-icon">▤</span><span>灵感笔记</span></button>
+          <button class="nav-item" data-view="insights"><span class="nav-icon">⌁</span><span>学习统计</span></button>
+          <button class="nav-item" data-view="focus"><span class="nav-icon">◷</span><span>专注计时</span></button>
+          <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span><span>设置与备份</span></button>
+        </nav>
+
+        <div class="sidebar-spacer"></div>
+        <div class="sidebar-tip">
+          <span class="tip-icon">✦</span>
+          <p>每天前进一点点，<br />学期末会感谢现在的你。</p>
+        </div>
+        <div class="sidebar-user">
+          <div class="avatar" id="user-avatar">同</div>
+          <div class="user-copy"><strong id="user-name">同学</strong><span id="user-major">探索新学期</span></div>
+          <button class="icon-btn subtle" data-action="edit-profile" aria-label="编辑个人资料">⚙</button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <button class="mobile-menu icon-btn" data-action="toggle-sidebar" aria-label="打开菜单">☰</button>
+          <div class="breadcrumb"><span>2026 · 2027</span><b>/</b><strong id="page-title">总览</strong></div>
+          <div class="topbar-actions">
+            <label class="search-box" aria-label="搜索">
+              <span>⌕</span><input id="global-search" type="search" placeholder="搜索任务、笔记…" autocomplete="off" />
+            </label>
+            <button class="icon-btn" data-action="toggle-theme" aria-label="切换主题" title="切换主题">☼</button>
+            <button class="icon-btn" data-action="go-view" data-view="settings" aria-label="打开设置" title="设置">⚙</button>
+            <button class="date-pill" data-action="go-today"><span class="calendar-icon">▣</span><span id="today-label"></span></button>
+          </div>
+        </header>
+
+        <div class="view-container" id="view-container" aria-live="polite"></div>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="modal-backdrop" hidden>
+      <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"></div>
+    </div>
+    <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+    <input type="file" id="import-file" accept="application/json" hidden />
+    <script src="app.js"></script>
+  </body>
+</html>

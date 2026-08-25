@@ -1,0 +1,13 @@
+{
+  "name": "CampusFlow · 我的大二计划",
+  "short_name": "大二计划",
+  "description": "把课程、任务、习惯和复盘放在一起的离线学习计划工具。",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#08131f",
+  "theme_color": "#38b7a4",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
