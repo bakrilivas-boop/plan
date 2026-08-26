@@ -9,7 +9,8 @@
   "plugins": {
     "LocalNotifications": {
       "smallIcon": "ic_stat_campusflow",
-      "iconColor": "#0f766e"
+      "iconColor": "#0f766e",
+      "sound": "campusflow_reminder.wav"
     }
   }
 }

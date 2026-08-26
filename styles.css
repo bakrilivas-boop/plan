@@ -595,6 +595,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .calendar-cell.term .calendar-lunar { color: #c17a2e; }
 .calendar-lunar { min-height: 13px; color: var(--muted); font-size: 10px; line-height: 1.2; }
 .calendar-event-title { max-width: 100%; overflow: hidden; color: var(--primary-strong); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-detail-list { display: grid; gap: 8px; }
+.calendar-detail-item { width: 100%; display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-muted); text-align: left; }
+.calendar-detail-item:hover { border-color: #a9d4ce; background: var(--primary-soft); }
+.calendar-detail-item span { min-width: 0; }
+.calendar-detail-item strong, .calendar-detail-item small { display: block; }
+.calendar-detail-item strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-detail-item small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.calendar-detail-item b { color: var(--muted); font-size: 18px; }
+.calendar-detail-time { color: var(--primary-strong); font-size: 10px; font-weight: 700; }
 .calendar-items { display: flex; gap: 4px; min-height: 7px; }
 .calendar-items i { width: 7px; height: 7px; border-radius: 3px; background: var(--primary); }
 .calendar-items i.orange { background: #efa65c; }

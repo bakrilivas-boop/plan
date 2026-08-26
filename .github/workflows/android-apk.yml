@@ -37,6 +37,15 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # Keep one stable debug keystore between workflow runs so a newly built
+      # APK can update the previously installed CampusFlow debug APK without
+      # forcing the user to uninstall it and lose local data.
+      - name: Restore stable debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: campusflow-debug-keystore-v1
+
       - name: Install Capacitor dependencies
         run: npm install --no-audit --no-fund
 

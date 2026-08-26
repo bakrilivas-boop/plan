@@ -1,6 +1,6 @@
 # CampusFlow 静态 QA 报告
 
-检查范围：网页、Capacitor Android 配置、本地通知调度与 GitHub Actions APK 构建。检查日期：2026-08-26。当前版本 `1.3.0`；本报告记录本轮实现与回归验证结果。
+检查范围：网页、Capacitor Android 配置、本地通知调度与 GitHub Actions APK 构建。检查日期：2026-08-26。当前版本 `1.5.0`；本报告记录本轮实现与回归验证结果。
 
 ## 已通过
 
