@@ -6,11 +6,11 @@
   'use strict';
 
   const STORAGE_KEY = 'campusflow-state-v1';
-  const APP_VERSION = '1.3.0';
+  const APP_VERSION = '1.4.0';
   const CURRENT_CHANGELOG = {
     version: APP_VERSION,
-    date: '2026-08-25',
-    text: '新增 Android 应用模式：直接申请系统通知权限并在手机本地安排任务提醒。'
+    date: '2026-08-26',
+    text: '日历新增农历、节气与特殊日期；课表截图可直接从手机相册选择。'
   };
   const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
   const COLORS = ['teal', 'orange', 'purple', 'blue'];
@@ -71,6 +71,50 @@
     return dateFromKey(key).toLocaleDateString('zh-CN', options || { month: 'long', day: 'numeric', weekday: 'short' });
   };
   const formatShort = (key) => formatDate(key, { month: 'numeric', day: 'numeric' });
+  const CALENDAR_DAY_NAMES = ['日', '一', '二', '三', '四', '五', '六'];
+  const LUNAR_DAY_NAMES = ['初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十', '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十', '廿一', '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', '廿九', '三十'];
+  const SOLAR_SPECIAL_DAYS = {
+    '01-01': '元旦', '03-08': '妇女节', '03-12': '植树节', '04-01': '愚人节',
+    '05-01': '劳动节', '05-04': '青年节', '06-01': '儿童节', '07-01': '建党节',
+    '08-01': '建军节', '09-10': '教师节', '10-01': '国庆节', '12-24': '平安夜', '12-25': '圣诞节'
+  };
+  const LUNAR_SPECIAL_DAYS = {
+    '1-1': '春节', '1-15': '元宵节', '2-2': '龙抬头', '5-5': '端午节',
+    '7-7': '七夕节', '7-15': '中元节', '8-15': '中秋节', '9-9': '重阳节', '12-8': '腊八节', '12-23': '北方小年', '12-24': '南方小年'
+  };
+  const SOLAR_TERMS = ['小寒', '大寒', '立春', '雨水', '惊蛰', '春分', '清明', '谷雨', '立夏', '小满', '芒种', '夏至', '小暑', '大暑', '立秋', '处暑', '白露', '秋分', '寒露', '霜降', '立冬', '小雪', '大雪', '冬至'];
+  const SOLAR_TERM_MINUTES = [0, 21208, 42467, 63836, 85337, 107014, 128867, 150921, 173149, 195551, 218072, 240693, 262861, 285130, 307562, 329988, 352454, 374968, 397446, 419913, 442033, 464462, 486900, 509270];
+  let lunarFormatter;
+  function lunarInfo(date) {
+    try {
+      lunarFormatter ||= new Intl.DateTimeFormat('zh-CN-u-ca-chinese', { month: 'long', day: 'numeric' });
+      const parts = lunarFormatter.formatToParts(date);
+      const monthText = parts.find((part) => part.type === 'month')?.value || '';
+      const day = Number(parts.find((part) => part.type === 'day')?.value) || 1;
+      const monthNumber = Number((monthText.match(/\d+/) || [])[0]) || ({ 正月: 1, 二月: 2, 三月: 3, 四月: 4, 五月: 5, 六月: 6, 七月: 7, 八月: 8, 九月: 9, 十月: 10, 十一月: 11, 十二月: 12, 冬月: 11, 腊月: 12 }[monthText.replace('闰', '')] || 0);
+      return { monthText, monthNumber, day, dayText: LUNAR_DAY_NAMES[day - 1] || String(day), leap: monthText.includes('闰') };
+    } catch (error) {
+      return { monthText: '', monthNumber: 0, day: 0, dayText: '', leap: false };
+    }
+  }
+  function solarTermFor(date) {
+    const year = date.getFullYear();
+    if (year < 1900 || year > 2100) return '';
+    for (let index = 0; index < SOLAR_TERMS.length; index += 1) {
+      const at = new Date(31556925974.7 * (year - 1900) + SOLAR_TERM_MINUTES[index] * 60000 + Date.UTC(1900, 0, 6, 2, 5) + 8 * 3600000);
+      if (at.getUTCMonth() === date.getMonth() && at.getUTCDate() === date.getDate()) return SOLAR_TERMS[index];
+    }
+    return '';
+  }
+  function calendarDateMeta(date) {
+    const lunar = lunarInfo(date);
+    const solarKey = `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const solarSpecial = SOLAR_SPECIAL_DAYS[solarKey] || '';
+    const lunarSpecial = !lunar.leap ? (LUNAR_SPECIAL_DAYS[`${lunar.monthNumber}-${lunar.day}`] || '') : '';
+    const term = solarTermFor(date);
+    const special = solarSpecial || lunarSpecial || term;
+    return { lunar, special, specialType: solarSpecial || lunarSpecial ? 'holiday' : term ? 'term' : '', label: special || (lunar.day === 1 ? lunar.monthText : lunar.dayText) };
+  }
   const escapeHtml = (value) => String(value == null ? '' : value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -726,11 +770,12 @@
 
   async function syncNativeTaskNotifications() {
     const plugin = nativeNotifications();
-    if (!isNativeApp() || !plugin || nativeNotificationPermission !== 'granted' || state.settings.notifications !== true) return;
+    if (!isNativeApp() || !plugin) return;
     try {
       const pending = await plugin.getPending();
       const campusFlowPending = (pending?.notifications || []).filter((item) => item.extra?.campusFlowTask === true);
       if (campusFlowPending.length) await plugin.cancel({ notifications: campusFlowPending.map((item) => ({ id: item.id })) });
+      if (nativeNotificationPermission !== 'granted' || state.settings.notifications !== true) return;
       const now = Date.now() + 1500;
       const notifications = state.tasks.filter((task) => task.status !== 'done').map((task) => {
         const at = nativeTaskReminderDate(task);
@@ -772,7 +817,8 @@
         description: '提醒当前任务应该完成的下一步',
         importance: 5,
         visibility: 1,
-        vibration: true
+        vibration: true,
+        sound: 'default'
       });
       if (!nativeNotificationListenersBound) {
         nativeNotificationListenersBound = true;
@@ -1353,33 +1399,38 @@
     const thisWeek = startOfWeek(new Date()).getTime() === weekStart.getTime();
     const weekLabelText = semesterWeek === 0 ? '开学前' : semesterWeek > (Number(state.profile.totalWeeks) || 20) ? '学期已结束' : `第 ${semesterWeek} 周`;
     return `${viewHeading('Timetable', '我的课表', `${thisWeek ? '本周' : '自定义周'} · ${weekLabelText} · 点击空白格添加课程`, '<button class="btn btn-ghost" data-action="go-current-week">回到本周</button><button class="btn btn-primary" data-action="new-course">＋ 添加课程</button>')}
+      <div class="ocr-album-tip"><span>🖼️</span><div><strong>从手机相册选择课表截图</strong><small>支持 PNG、JPG、WebP、HEIC；图片仅在本机识别，不会上传。</small></div><button class="btn btn-primary btn-sm" data-action="ocr-import">打开相册</button></div>
       <div class="card timetable-card"><div class="timetable-head"><div class="week-nav"><button class="icon-btn" data-action="week-prev" aria-label="上一周">‹</button><strong>${weekLabel}</strong><button class="icon-btn" data-action="week-next" aria-label="下一周">›</button></div><div class="heading-actions"><button class="btn btn-ghost btn-sm" data-action="ocr-import">▧ 截图识别</button><button class="btn btn-ghost btn-sm" data-action="export-csv">导出表格</button><button class="btn btn-ghost btn-sm" data-action="open-updates">更新中心</button></div></div><div class="week-grid"><div class="week-corner"></div>${dayHeads}${cells}</div><div class="timetable-mobile"><div class="mobile-day-switcher" role="tablist" aria-label="选择课表日期">${mobileDayTabs}</div><div class="mobile-day-caption"><strong>${mobileDayLabel}</strong><span>${activeDayCourses.length ? `${activeDayCourses.length} 门课程` : '暂无课程'}</span></div><div class="mobile-period-list">${mobilePeriodRows}</div></div><div class="course-summary"><div class="summary-pill"><strong>${state.courses.length}</strong><span>门课程</span></div><div class="summary-pill"><strong>${state.courses.reduce((sum, course) => sum + (Number(course.credits) || 0), 0)}</strong><span>学分</span></div><div class="summary-pill"><strong>${state.courses.filter((course) => course.day <= 5).length}</strong><span>工作日课程</span></div></div></div>`;
   }
 
   function renderCalendar() {
     const monthStart = startOfMonth(calendarCursor);
-    const firstDay = (monthStart.getDay() || 7) - 1;
+    const firstDay = monthStart.getDay();
     const daysInMonth = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 0).getDate();
-    const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+    const totalCells = 42;
     const cells = Array.from({ length: totalCells }, (_, index) => {
       const day = index - firstDay + 1;
       const date = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), day);
       const key = dateKey(date);
       const inMonth = date.getMonth() === calendarCursor.getMonth();
+      const meta = calendarDateMeta(date);
       const eventItems = state.events.filter((event) => !event.autoGenerated && event.date === key);
       const taskItems = state.settings.autoEvent === true
         ? state.tasks.filter((task) => task.status !== 'done' && task.due === key).map((task) => ({ ...task, title: task.title, type: '任务' }))
         : [];
       const items = [...eventItems, ...taskItems];
-      return `<button class="calendar-cell ${inMonth ? '' : 'muted'} ${key === todayKey() ? 'today' : ''}" data-action="calendar-day" data-date="${key}"><span class="calendar-day-num">${date.getDate()}</span><span class="calendar-items">${items.slice(0, 3).map((item) => `<i class="${item.color || 'teal'}" title="${escapeHtml(item.title)}"></i>`).join('')}</span></button>`;
+      const itemTitle = items[0]?.title || '';
+      return `<button class="calendar-cell ${inMonth ? '' : 'muted'} ${key === todayKey() ? 'today' : ''} ${meta.specialType}" data-action="calendar-day" data-date="${key}" aria-label="${key}，农历${escapeHtml(meta.lunar.monthText)}${escapeHtml(meta.lunar.dayText)}${meta.special ? `，${escapeHtml(meta.special)}` : ''}${items.length ? `，${items.length}项安排` : ''}"><span class="calendar-day-num">${date.getDate()}</span><span class="calendar-lunar">${escapeHtml(meta.label || '')}</span><span class="calendar-items">${items.slice(0, 3).map((item) => `<i class="${item.color || 'teal'}" title="${escapeHtml(item.title)}"></i>`).join('')}</span>${itemTitle ? `<span class="calendar-event-title">${escapeHtml(itemTitle)}</span>` : ''}</button>`;
     }).join('');
     const upcomingEnd = dateKey(addDays(dateFromKey(todayKey()), 6));
     const upcomingTasks = state.settings.autoEvent === true
       ? state.tasks.filter((task) => task.status !== 'done' && task.due).map((task) => ({ ...task, title: task.title, date: task.due, time: task.time, kind: '任务' }))
       : [];
     const upcoming = [...state.events.filter((event) => !event.autoGenerated).map((event) => ({ ...event, kind: '事件' })), ...upcomingTasks].filter((item) => item.date >= todayKey() && item.date <= upcomingEnd).sort((a, b) => a.date.localeCompare(b.date) || String(a.time || '').localeCompare(String(b.time || ''))).slice(0, 8);
-    return `${viewHeading('Calendar', '日历', '考试、截止日期和生活安排都在这里，先看全局再排今天。', '<button class="btn btn-ghost" data-action="calendar-today">今天</button><button class="btn btn-primary" data-action="new-event">＋ 新建事件</button>')}
-      <div class="calendar-layout"><div class="card calendar-card"><div class="calendar-toolbar"><button class="icon-btn" data-action="month-prev" aria-label="上个月">‹</button><h2>${calendarCursor.getFullYear()} 年 ${calendarCursor.getMonth() + 1} 月</h2><button class="icon-btn" data-action="month-next" aria-label="下个月">›</button></div><div class="calendar-week-head">${DAY_NAMES.map((name) => `<span>周${name}</span>`).join('')}</div><div class="calendar-grid">${cells}</div></div><div class="card"><div class="card-header"><h3>未来 7 天</h3><span class="tag teal">${upcoming.length} 项</span></div><div class="upcoming-list">${upcoming.length ? upcoming.map((item) => `<button class="upcoming-item" data-action="${item.kind === '任务' ? 'edit-task' : 'calendar-day'}" data-id="${item.kind === '任务' ? item.id : ''}" data-date="${item.date}" data-event-id="${item.kind === '事件' ? item.id : ''}"><span class="upcoming-date">${formatShort(item.date)}<small>${item.time || '全天'}</small></span><span class="upcoming-copy"><strong>${escapeHtml(item.title)}</strong><small>${item.kind} · ${escapeHtml(item.place || item.category || '未分类')}</small></span><span class="upcoming-arrow">›</span></button>`).join('') : '<div class="empty-state">未来 7 天没有安排。</div>'}</div></div></div>`;
+    const cursorMeta = calendarDateMeta(calendarCursor);
+    const lunarSummary = `农历${cursorMeta.lunar.monthText}${cursorMeta.lunar.dayText}${cursorMeta.special ? ` · ${cursorMeta.special}` : ''}`;
+    return `${viewHeading('Calendar', '日历', '公历、农历、节气、节日和学习安排，一眼看清。', '<button class="btn btn-ghost" data-action="calendar-today">今天</button><button class="btn btn-primary" data-action="new-event">＋ 新建事件</button>')}
+      <div class="calendar-layout"><div class="card calendar-card"><div class="calendar-toolbar"><button class="icon-btn" data-action="month-prev" aria-label="上个月">‹</button><div><h2><strong>${calendarCursor.getFullYear()}</strong><em>/</em>${pad(calendarCursor.getMonth() + 1)}</h2><small>${escapeHtml(lunarSummary)}</small></div><button class="icon-btn" data-action="month-next" aria-label="下个月">›</button></div><div class="calendar-legend"><span><i class="holiday"></i>节日</span><span><i class="term"></i>节气</span><span><i class="event"></i>你的安排</span></div><div class="calendar-week-head">${CALENDAR_DAY_NAMES.map((name) => `<span>周${name}</span>`).join('')}</div><div class="calendar-grid">${cells}</div></div><div class="card"><div class="card-header"><h3>未来 7 天</h3><span class="tag teal">${upcoming.length} 项</span></div><div class="upcoming-list">${upcoming.length ? upcoming.map((item) => `<button class="upcoming-item" data-action="${item.kind === '任务' ? 'edit-task' : 'calendar-day'}" data-id="${item.kind === '任务' ? item.id : ''}" data-date="${item.date}" data-event-id="${item.kind === '事件' ? item.id : ''}"><span class="upcoming-date">${formatShort(item.date)}<small>${item.time || '全天'}</small></span><span class="upcoming-copy"><strong>${escapeHtml(item.title)}</strong><small>${item.kind} · ${escapeHtml(item.place || item.category || '未分类')}</small></span><span class="upcoming-arrow">›</span></button>`).join('') : '<div class="empty-state">未来 7 天没有安排。</div>'}</div></div></div>`;
   }
 
   function renderHabits() {

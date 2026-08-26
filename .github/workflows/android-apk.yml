@@ -43,7 +43,7 @@ jobs:
       - name: Generate Android project
         run: |
           npm run build:web
-          npx cap add android
+          node scripts/ensure-android.mjs
           node scripts/configure-android.mjs
           npx cap sync android
           node scripts/configure-android.mjs

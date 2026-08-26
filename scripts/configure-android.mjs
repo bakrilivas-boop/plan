@@ -25,8 +25,8 @@ await writeFile(manifestPath, manifest, 'utf8');
 
 let gradle = await readFile(gradlePath, 'utf8');
 gradle = gradle
-  .replace(/versionCode\s+\d+/, 'versionCode 13')
-  .replace(/versionName\s+"[^"]+"/, 'versionName "1.3.0"');
+  .replace(/versionCode\s+\d+/, 'versionCode 14')
+  .replace(/versionName\s+"[^"]+"/, 'versionName "1.4.0"');
 await writeFile(gradlePath, gradle, 'utf8');
 
 await mkdir(drawableRoot, { recursive: true });

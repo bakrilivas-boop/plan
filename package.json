@@ -1,11 +1,12 @@
 {
   "name": "campusflow-sophomore-planner",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "CampusFlow 大二计划网站与 Android 应用",
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
-    "android:sync": "npm run build:web && npx cap sync android && node scripts/configure-android.mjs",
+    "android:add": "node scripts/ensure-android.mjs",
+    "android:sync": "npm run build:web && node scripts/ensure-android.mjs && npx cap sync android && node scripts/configure-android.mjs",
     "android:debug": "npm run android:sync && cd android && gradlew.bat assembleDebug",
     "android:open": "npm run android:sync && npx cap open android"
   },
