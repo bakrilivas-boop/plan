@@ -68,6 +68,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .icon-btn { width: 35px; height: 35px; border-radius: 10px; color: var(--muted); background: transparent; display: grid; place-items: center; font-size: 16px; transition: .18s ease; }
 .icon-btn:hover { color: var(--primary); background: var(--primary-soft); }
 .icon-btn.subtle { width: 23px; height: 23px; font-size: 13px; }
+.notification-center-button { position: relative; }
+.notification-center-button.needs-action { color: #b85c24; background: #fff3e6; }
+.notification-center-button.enabled { color: var(--primary); background: var(--primary-soft); }
+.notification-indicator { position: absolute; width: 8px; height: 8px; right: 4px; top: 4px; border: 2px solid var(--surface); border-radius: 50%; background: var(--danger); }
 .date-pill { height: 35px; padding: 0 11px; display: inline-flex; align-items: center; gap: 7px; color: var(--primary-strong); border: 1px solid #cce6e2; border-radius: 10px; background: var(--surface); font-size: 12px; font-weight: 600; }
 .date-pill:hover { background: var(--primary-soft); }
 .calendar-icon { font-size: 14px; }
@@ -86,6 +90,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .btn-ghost:hover { background: var(--primary-soft); }
 .btn-danger { color: #b9424b; border-color: #f2d3d5; background: #fff7f7; }
 .btn-danger:hover { background: #ffe9ea; }
+.btn-warning { color: #9a4d20; border-color: #f3c79e; background: #fff4e8; }
+.btn-warning:hover { color: #7f3814; background: #ffe7cf; }
 .btn-sm { min-height: 30px; padding: 0 10px; font-size: 11px; }
 .btn-xs { min-height: 26px; padding: 0 7px; font-size: 9px; white-space: nowrap; }
 
@@ -189,6 +195,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .reminder-checkmark { width: 37px; height: 37px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: #fff; background: var(--primary); font-size: 18px; font-weight: 800; }
 
 /* Planner */
+.planner-guide { display: grid; grid-template-columns: minmax(190px, .8fr) minmax(390px, 1.6fr) auto; align-items: center; gap: 18px; padding: 17px 20px; margin-bottom: 15px; border-color: #bfe2dd; background: linear-gradient(120deg, var(--primary-soft), var(--surface) 62%); }
+.planner-guide-copy h3 { margin: 4px 0 3px; font-size: 15px; }
+.planner-guide-copy p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.planner-guide-flow { display: flex; align-items: center; justify-content: center; gap: 9px; }
+.planner-guide-flow > div { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.planner-guide-flow > b { color: #9db8b6; font-weight: 400; }
+.planner-guide-flow i { width: 25px; height: 25px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: #fff; background: var(--primary); font-size: 10px; font-style: normal; font-weight: 800; }
+.planner-guide-flow span, .planner-guide-flow strong, .planner-guide-flow small { display: block; min-width: 0; }
+.planner-guide-flow strong { font-size: 10px; white-space: nowrap; }
+.planner-guide-flow small { margin-top: 2px; color: var(--muted); font-size: 8px; line-height: 1.35; }
+.planner-guide-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 15px; margin-bottom: 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
 .segmented { display: inline-flex; padding: 3px; border-radius: 9px; background: var(--surface-muted); }
 .segmented button { padding: 6px 11px; border-radius: 7px; color: var(--muted); background: transparent; font-size: 11px; }
@@ -209,6 +226,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .plan-copy p { color: var(--text); }
 .plan-copy .plan-note { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plan-copy .plan-meta { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
+.task-step-checklist { margin-top: 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); }
+.task-step-checklist summary { min-height: 30px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 9px; color: var(--primary-strong); font-size: 9px; font-weight: 700; cursor: pointer; list-style: none; }
+.task-step-checklist summary::-webkit-details-marker { display: none; }
+.task-step-checklist summary::before { content: "▸"; margin-right: 2px; transition: transform .16s ease; }
+.task-step-checklist[open] summary::before { transform: rotate(90deg); }
+.task-step-checklist summary span { flex: 1; }
+.task-step-checklist summary small { color: var(--muted); font-size: 8px; font-weight: 500; }
+.task-step-checklist ol { display: grid; gap: 5px; padding: 1px 9px 9px 9px; margin: 0; list-style: none; }
+.task-step-checklist li { min-width: 0; display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 7px; min-height: 27px; padding: 4px 6px; border-radius: 7px; color: var(--muted); font-size: 9px; }
+.task-step-checklist li.current { color: var(--text); background: var(--primary-soft); font-weight: 700; }
+.task-step-checklist li.done { color: #9cadb0; text-decoration: line-through; }
+.task-step-checklist li b { color: var(--primary-strong); font-size: 8px; white-space: nowrap; }
+.step-number { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid #bad8d4; border-radius: 50%; color: var(--primary-strong); font-size: 8px; text-decoration: none; }
+.task-step-checklist li.done .step-number { color: #fff; border-color: var(--primary); background: var(--primary); }
 .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 10px; color: #5f7679; background: #edf3f3; }
 .tag.teal { color: #0d756d; background: #e2f4f1; }
 .tag.orange { color: #a8662d; background: #fff0df; }
@@ -391,6 +422,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .dark .reminder-panel { border-color: #59443a; background: linear-gradient(135deg, #2f2a27, #1b3033 75%); }
 .dark .reminder-panel-clear { border-color: #2d5b56; background: linear-gradient(135deg, #1d4846, #1b3033 75%); }
 .dark .reminder-panel-muted { background: var(--surface-muted); }
+.dark .planner-guide { border-color: #2d5b56; background: linear-gradient(120deg, #1d4846, #1b3033 68%); }
+.dark .notification-guide-status { border-color: #5b4937; background: #302a25; }
+.dark .notification-guide-status.success { border-color: #2d5b56; background: #1d4846; }
+.dark .notification-guide-status.error { border-color: #674247; background: #38282a; }
 .dark .task-row, .dark .plan-item, .dark .habit-line, .dark .habit-card-row, .dark .note-item { border-color: #294044; }
 .dark .form-field input, .dark .form-field select, .dark .form-field textarea { border-color: #365356; }
 .dark .period-cell, .dark .course-block { filter: saturate(.9); }
@@ -400,6 +435,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .topbar, .view-container { padding-left: 28px; padding-right: 28px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid, .planner-columns, .habits-layout, .notes-layout, .two-col { grid-template-columns: 1fr; }
+  .planner-guide { grid-template-columns: 1fr; }
+  .planner-guide-flow { justify-content: flex-start; }
+  .planner-guide-actions { justify-content: flex-start; }
 }
 @media (max-width: 760px) {
   :root { --sidebar: 248px; }
@@ -433,6 +471,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .day-tile { min-height: 66px; }
   .toolbar { align-items: flex-start; flex-direction: column; }
   .planner-columns, .planner-columns > .card { min-width: 0; width: 100%; max-width: 100%; }
+  .planner-guide { padding: 16px; }
+  .planner-guide-flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+  .planner-guide-flow > b { display: none; }
+  .planner-guide-flow > div { align-items: flex-start; }
+  .planner-guide-flow strong { white-space: normal; }
+  .plan-item { flex-wrap: wrap; }
+  .plan-copy { flex: 1 1 calc(100% - 58px); }
+  .plan-item > .btn-xs { min-height: 38px; margin-left: 49px; }
   .toolbar .heading-actions { width: auto; margin-left: auto; }
   /* The seven-column timetable is intentionally replaced by a focused day
      view on touch-sized screens; the desktop grid remains unchanged above. */
@@ -456,6 +502,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (max-width: 420px) {
   .topbar-actions { gap: 6px; }
   .topbar-actions .icon-btn { display: none; }
+  .topbar-actions .notification-center-button { display: grid; }
   /* Keep global search available on very narrow screens. The input used to
      be display:none here, leaving an inert search glyph with no interaction. */
   .search-box {
@@ -499,6 +546,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .reminder-item { align-items: flex-start; flex-wrap: wrap; }
   .reminder-item-actions { flex: 1 0 calc(100% - 48px); margin-left: 48px; }
   .reminder-item-actions .btn { flex: 1; }
+  .planner-guide-flow { grid-template-columns: 1fr; gap: 8px; }
+  .planner-guide-flow > div { min-height: 38px; }
+  .planner-guide-actions .btn { width: 100%; }
+  .task-step-checklist summary { min-height: 38px; }
 }
 @media (max-width: 280px) {
   /* Keep the seven-day overview usable on very narrow phones instead of
@@ -600,6 +651,29 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .notification-state { flex: 0 0 auto; font-size: 10px; font-weight: 700; }
 .notification-state.success { color: var(--primary); }
 .notification-actions { flex: 0 0 auto; }
+.notification-guide { padding-top: 2px; }
+.notification-guide-status { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid #ecd3ba; border-radius: 12px; background: #fff8ef; }
+.notification-guide-status.success { border-color: #bfe2dd; background: var(--primary-soft); }
+.notification-guide-status.error { border-color: #efc4c6; background: #fff2f2; }
+.notification-guide-icon { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 12px; color: #a65320; background: #ffe8cf; font-size: 21px; }
+.notification-guide-status.success .notification-guide-icon { color: var(--primary-strong); background: #cfeae6; }
+.notification-guide-status.error .notification-guide-icon { color: #b9424b; background: #ffe0e1; }
+.notification-guide-status small, .notification-guide-status strong, .notification-guide-status p { display: block; }
+.notification-guide-status small { color: var(--muted); font-size: 9px; }
+.notification-guide-status strong { margin-top: 2px; font-size: 14px; }
+.notification-guide-status p { margin: 3px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.notification-current { display: grid; gap: 3px; padding: 12px 14px; margin-top: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-muted); }
+.notification-current span { color: var(--muted); font-size: 9px; }
+.notification-current strong { font-size: 12px; }
+.notification-current small { color: var(--primary-strong); font-size: 10px; line-height: 1.5; }
+.notification-guide-steps { display: grid; gap: 8px; padding: 0; margin: 13px 0 0; list-style: none; counter-reset: notification-step; }
+.notification-guide-steps li { position: relative; min-height: 38px; padding: 7px 9px 7px 40px; border-radius: 9px; background: var(--surface-muted); counter-increment: notification-step; }
+.notification-guide-steps li::before { content: counter(notification-step); position: absolute; width: 23px; height: 23px; left: 9px; top: 7px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--primary); font-size: 9px; font-weight: 800; }
+.notification-guide-steps strong, .notification-guide-steps span { display: block; }
+.notification-guide-steps strong { font-size: 10px; }
+.notification-guide-steps span { margin-top: 2px; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.notification-guide-note { margin: 12px 0 0; color: var(--muted); font-size: 9px; line-height: 1.65; }
+.notification-guide-actions { flex-wrap: wrap; }
 .update-card, .shortcuts-card { margin-top: 18px; }
 .update-time { display: block; margin-top: 13px; color: var(--muted); font-size: 10px; }
 .shortcut-row { display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center; gap: 8px; padding: 8px 0; color: var(--muted); font-size: 10px; }
@@ -643,4 +717,6 @@ kbd { min-width: 26px; padding: 3px 6px; border: 1px solid var(--line); border-b
   .reminder-list { padding-left: 15px; padding-right: 15px; }
   .notification-permission { align-items: flex-start; flex-direction: column; }
   .notification-actions { width: 100%; justify-content: space-between; }
+  .notification-guide-actions { display: grid; grid-template-columns: 1fr; }
+  .notification-guide-actions .btn { width: 100%; }
 }

@@ -6,11 +6,11 @@
   'use strict';
 
   const STORAGE_KEY = 'campusflow-state-v1';
-  const APP_VERSION = '1.2.2';
+  const APP_VERSION = '1.2.4';
   const CURRENT_CHANGELOG = {
     version: APP_VERSION,
     date: '2026-08-25',
-    text: '学期边界与任务日历联动、过期专注恢复、移动端无障碍与窄屏体验优化。'
+    text: '新增醒目的提醒中心、任务完整步骤清单与设备通知授权引导。'
   };
   const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
   const COLORS = ['teal', 'orange', 'purple', 'blue'];
@@ -600,10 +600,45 @@
     return { supported: true, permission, label: '点击后由浏览器弹出系统授权，不会偷偷获取权限' };
   }
 
+  function notificationGuide() {
+    const notification = notificationStatus();
+    const pending = reminderItems();
+    const preview = pending[0]?.task;
+    let stateClass = 'needs-action';
+    let stateLabel = '等待授权';
+    let instructions = '<li><strong>点击“立即授权”</strong><span>浏览器会弹出系统通知请求。</span></li><li><strong>选择“允许”</strong><span>授权成功后会立刻发送一条测试通知。</span></li><li><strong>完成任务步骤</strong><span>每完成一步，通知会告诉你下一步做什么。</span></li>';
+    let action = '<button class="btn btn-primary" data-action="request-notification" data-autofocus>🔔 立即授权设备通知</button>';
+    if (notification.permission === 'granted') {
+      stateClass = 'success';
+      stateLabel = '设备通知已开启';
+      instructions = '<li><strong>权限已连接</strong><span>CampusFlow 可以向这台设备发送通知。</span></li><li><strong>网页保持打开</strong><span>到期检查和逐步提醒会按设置频率运行。</span></li><li><strong>随时验证</strong><span>点击下方按钮发送一条测试通知。</span></li>';
+      action = '<button class="btn btn-primary" data-action="test-notification" data-autofocus>发送测试通知</button>';
+    } else if (notification.permission === 'denied') {
+      stateClass = 'error';
+      stateLabel = '浏览器已阻止通知';
+      instructions = '<li><strong>打开网站权限</strong><span>点击地址栏左侧的网站图标或锁形图标，进入“网站设置”。</span></li><li><strong>把“通知”改为允许</strong><span>如果浏览器里没有该项，再检查手机或电脑的系统通知设置。</span></li><li><strong>刷新并重新检测</strong><span>回到本页刷新后，点击下方按钮确认状态。</span></li>';
+      action = '<button class="btn btn-primary" data-action="recheck-notification" data-autofocus>我已允许，重新检测</button><button class="btn btn-ghost" data-action="go-view" data-view="settings">打开应用设置</button>';
+    } else if (!notification.supported) {
+      stateClass = 'error';
+      stateLabel = notification.permission === 'install-required' ? '需先添加到主屏幕' : '当前环境暂不支持';
+      instructions = notification.permission === 'install-required'
+        ? '<li><strong>使用 Safari 打开网站</strong><span>点击分享按钮并选择“添加到主屏幕”。</span></li><li><strong>从桌面图标重新打开</strong><span>不要继续使用原来的 Safari 标签页。</span></li><li><strong>打开提醒中心</strong><span>再点击“立即授权设备通知”。</span></li>'
+        : `<li><strong>设备通知不可用</strong><span>${escapeHtml(notification.label)}</span></li><li><strong>站内提醒仍然有效</strong><span>网页打开时会在首页显示当前步骤。</span></li>`;
+      action = '<button class="btn btn-primary" data-action="go-view" data-view="planner" data-autofocus>查看分步待办</button>';
+    }
+    const current = preview ? `<div class="notification-current"><span>当前最需要处理</span><strong>${escapeHtml(preview.title)}</strong><small>现在做：${escapeHtml(taskNextStep(preview))}</small></div>` : '<div class="notification-current"><span>当前状态</span><strong>暂无今天到期或逾期的任务</strong><small>授权后，新任务仍会按步骤提醒。</small></div>';
+    return `<div class="notification-guide"><div class="notification-guide-status ${stateClass}"><span class="notification-guide-icon">🔔</span><div><small>设备通知状态</small><strong>${escapeHtml(stateLabel)}</strong><p>${escapeHtml(notification.label)}</p></div></div>${current}<ol class="notification-guide-steps">${instructions}</ol><p class="notification-guide-note">隐私说明：权限只能由你亲自点击并在浏览器弹窗中选择“允许”，网站无法绕过系统替你授权。纯静态网页关闭后不能持续在后台运行，重新打开会立即补查。</p><div class="modal-foot notification-guide-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">稍后</button>${action}</div></div>`;
+  }
+
+  function openNotificationCenter() {
+    const preserveReturnFocus = !$('#modal-backdrop')?.hidden;
+    openModal('提醒中心', '开启后，任务会直接告诉你“现在做哪一步”。', notificationGuide(), { context: 'notification-center', preserveReturnFocus });
+  }
+
   function reminderNotificationAction(compact) {
     const notification = notificationStatus();
     if (notification.permission === 'granted') return compact ? '<span class="notification-chip success">🔔 已开启</span>' : '<span class="notification-state success">✓ 设备通知已授权</span>';
-    if (notification.permission === 'denied') return '<button class="btn btn-ghost btn-sm" data-action="go-view" data-view="settings">检查通知权限</button>';
+    if (notification.permission === 'denied') return '<button class="btn btn-warning btn-sm" data-action="open-notification-center">⚠ 通知被阻止，点此修复</button>';
     if (notification.supported) return `<button class="btn ${compact ? 'btn-ghost' : 'btn-primary'} btn-sm" data-action="request-notification">🔔 开启设备通知</button>`;
     return compact ? '' : `<span class="notification-state">${escapeHtml(notification.label)}</span>`;
   }
@@ -755,14 +790,22 @@
       state.settings.notifications = false;
       saveState();
       render();
-      return showToast(status.label, 'error');
+      openNotificationCenter();
+      return showToast('通知已被浏览器阻止，请按提醒中心的 3 步重新允许', 'error', 6200);
     }
     if (status.permission === 'granted') {
       state.settings.notifications = true;
       saveState();
       render();
-      await checkReminders({ source: 'permission', forceBrowser: true, skipInApp: true });
-      return showToast('设备通知已启用：每完成一步都会提醒下一步', 'success');
+      const first = reminderItems()[0]?.task;
+      await showDeviceNotification('CampusFlow · 分步提醒已开启', {
+        body: first ? `${first.title}：现在做「${taskNextStep(first)}」` : '授权成功。新建待办后，我会告诉你现在应该做哪一步。',
+        tag: 'campusflow-notification-enabled',
+        data: { view: first ? 'planner' : 'dashboard', taskId: first?.id || '' }
+      });
+      syncAppBadge(reminderItems().length);
+      openNotificationCenter();
+      return showToast('设备通知已启用，并已发送测试通知', 'success', 5200);
     }
     try {
       const permission = await window.Notification.requestPermission();
@@ -770,8 +813,15 @@
         state.settings.notifications = true;
         saveState();
         render();
-        await checkReminders({ source: 'permission', forceBrowser: true, skipInApp: true });
-        showToast('设备通知已启用：每完成一步都会提醒下一步', 'success');
+        const first = reminderItems()[0]?.task;
+        await showDeviceNotification('CampusFlow · 分步提醒已开启', {
+          body: first ? `${first.title}：现在做「${taskNextStep(first)}」` : '授权成功。新建待办后，我会告诉你现在应该做哪一步。',
+          tag: 'campusflow-notification-enabled',
+          data: { view: first ? 'planner' : 'dashboard', taskId: first?.id || '' }
+        });
+        syncAppBadge(reminderItems().length);
+        openNotificationCenter();
+        showToast('设备通知已启用，并已发送测试通知', 'success', 5200);
       } else if (permission === 'denied') {
         state.settings.notifications = false;
         saveState();
@@ -876,6 +926,17 @@
     $('#today-label').textContent = formatDate(todayKey(), { month: 'long', day: 'numeric' });
     const activeTasks = state.tasks.filter((task) => task.status !== 'done').length;
     $('#todo-count').textContent = activeTasks > 99 ? '99+' : activeTasks;
+    const notification = notificationStatus();
+    const notificationButton = $('#notification-center-button');
+    const notificationIndicator = $('#notification-indicator');
+    if (notificationButton) {
+      const needsAction = notification.permission !== 'granted';
+      notificationButton.classList.toggle('needs-action', needsAction);
+      notificationButton.classList.toggle('enabled', notification.permission === 'granted');
+      notificationButton.setAttribute('aria-label', notification.permission === 'granted' ? '提醒中心，设备通知已开启' : `提醒中心，${notification.label}`);
+      notificationButton.title = notification.permission === 'granted' ? '提醒中心 · 已开启' : '提醒中心 · 需要处理';
+    }
+    if (notificationIndicator) notificationIndicator.hidden = notification.permission === 'granted';
     const container = $('#view-container');
     if (!container) return;
     const views = { dashboard: renderDashboard, planner: renderPlanner, timetable: renderTimetable, calendar: renderCalendar, habits: renderHabits, notes: renderNotes, insights: renderInsights, focus: renderFocus, settings: renderSettings };
@@ -940,6 +1001,27 @@
       <div class="grid two-col"><div class="card"><div class="card-header"><h3>今日待办</h3><button class="muted-link" data-action="go-view" data-view="planner">查看全部 →</button></div><div class="task-list">${todayTasks.length ? todayTasks.slice(0, 5).map((t) => taskRow(t, true)).join('') : '<div class="empty-state"><span class="empty-icon">✓</span>今天没有到期任务，享受轻松的一天。</div>'}</div></div><div class="card"><div class="card-header"><h3>近期目标</h3><button class="muted-link" data-action="go-view" data-view="insights">看统计 →</button></div><div class="milestone-list">${state.goals.slice(0, 3).map((goal) => `<div class="milestone"><div class="milestone-top"><strong>${escapeHtml(goal.title)}</strong><span>${goal.progress || 0}%</span></div><div class="progress-track"><div class="progress-fill" style="width:${clamp(Number(goal.progress) || 0, 0, 100)}%"></div></div></div>`).join('')}</div></div></div>`;
   }
 
+  function taskStepChecklist(task) {
+    const steps = taskSteps(task);
+    if (!steps.length) return '';
+    const doneCount = steps.filter((step) => step.done).length;
+    const currentId = steps.find((step) => !step.done)?.id;
+    const rows = steps.map((step, index) => {
+      const current = !step.done && step.id === currentId;
+      return `<li class="${step.done ? 'done' : ''} ${current ? 'current' : ''}" ${current ? 'aria-current="step"' : ''}><span class="step-number">${step.done ? '✓' : index + 1}</span><span>${escapeHtml(step.text)}</span>${current ? '<b>现在做</b>' : ''}</li>`;
+    }).join('');
+    return `<details class="task-step-checklist"><summary><span>查看全部 ${steps.length} 个步骤</span><small>${doneCount}/${steps.length} 已完成</small></summary><ol>${rows}</ol></details>`;
+  }
+
+  function renderPlannerGuide() {
+    const notification = notificationStatus();
+    const ready = notification.permission === 'granted';
+    const action = ready
+      ? '<button class="btn btn-ghost btn-sm" data-action="open-notification-center">🔔 通知已开启</button>'
+      : '<button class="btn btn-warning btn-sm" data-action="open-notification-center">🔔 开启每一步通知</button>';
+    return `<section class="card planner-guide" aria-label="分步骤待办使用方法"><div class="planner-guide-copy"><div class="eyebrow">Step-by-step reminders</div><h3>待办会一步一步带着你做</h3><p>不是只记一个任务标题，而是始终告诉你“现在做什么”。</p></div><div class="planner-guide-flow"><div><i>1</i><span><strong>拆成小步骤</strong><small>新建任务时每行填写一步</small></span></div><b>→</b><div><i>2</i><span><strong>完成当前一步</strong><small>点击“完成此步”自动推进</small></span></div><b>→</b><div><i>3</i><span><strong>提醒下一步</strong><small>站内与设备通知同步更新</small></span></div></div><div class="planner-guide-actions"><button class="btn btn-primary btn-sm" data-action="new-task">＋ 新建分步待办</button>${action}</div></section>`;
+  }
+
   function renderPlanner() {
     const filtered = state.tasks.filter((task) => {
       const matchesSearch = !searchTerm || `${task.title} ${task.nextStep || ''} ${taskSteps(task).map((step) => step.text).join(' ')} ${task.desc || ''} ${task.category}`.toLowerCase().includes(searchTerm.toLowerCase());
@@ -957,8 +1039,9 @@
     const groups = {};
     filtered.forEach((task) => { const key = task.due || 'none'; (groups[key] ||= []).push(task); });
     return `${viewHeading('Plan & do', '计划与任务', '把学期目标拆成今天可以完成的小步；每项任务都写清下一步行动。', '<button class="btn btn-ghost" data-action="new-goal">＋ 学期目标</button><button class="btn btn-primary" data-action="new-task">＋ 新建任务</button>')}
+      ${renderPlannerGuide()}
       <div class="toolbar"><div class="segmented" role="group" aria-label="任务筛选">${[['all', '全部'], ['todo', '待完成'], ['done', '已完成'], ['overdue', '已逾期']].map(([value, label]) => `<button class="${plannerFilter === value ? 'active' : ''}" data-action="planner-filter" data-filter="${value}" aria-pressed="${plannerFilter === value}">${label}</button>`).join('')}</div><div class="heading-actions"><select class="select" data-action="sort-tasks" aria-label="排序任务"><option value="due" ${plannerSort === 'due' ? 'selected' : ''}>按截止日期</option><option value="priority" ${plannerSort === 'priority' ? 'selected' : ''}>按优先级</option></select><button class="btn btn-ghost btn-sm" data-action="export-csv">导出 CSV</button></div></div>
-      <div class="planner-columns"><div class="card"><div class="card-header"><h3>${filtered.length} 项任务</h3><span class="tag teal">${state.tasks.filter((t) => t.status === 'done').length} 已完成</span></div>${Object.keys(groups).length ? Object.entries(groups).map(([key, items]) => `<div class="plan-group"><div class="plan-date ${key === todayKey() ? 'today-label' : ''}">${key === 'none' ? '未设置日期' : formatDate(key, { month: 'long', day: 'numeric', weekday: 'short' })}<span class="tag ${key < todayKey() ? 'orange' : ''}">${key === 'none' ? '' : relativeDue(key)}</span></div>${items.map((task) => `<div class="plan-item" data-task-id="${task.id}"><button class="task-check ${task.status === 'done' ? 'done' : ''}" data-action="toggle-task" data-id="${task.id}" aria-label="切换完成状态">${task.status === 'done' ? '✓' : ''}</button><div class="priority-dot ${task.priority || 'low'}"></div><div class="plan-copy"><strong class="${task.status === 'done' ? 'done' : ''}">${escapeHtml(task.title)}</strong><p><b>${task.status === 'done' ? '完成进度：' : '现在做：'}</b>${escapeHtml(task.status === 'done' ? `全部 ${taskSteps(task).length || 1} 步` : taskNextStep(task))}</p>${task.desc && task.desc !== task.nextStep ? `<small class="plan-note">${escapeHtml(task.desc)}</small>` : ''}<span class="plan-meta">${escapeHtml(task.category || '未分类')}${taskStepProgress(task) ? ` · ${taskStepProgress(task)}` : ''}</span></div>${task.status !== 'done' && taskSteps(task).some((step) => !step.done) ? `<button class="btn btn-ghost btn-xs" data-action="advance-task" data-id="${task.id}">完成此步</button>` : ''}<button class="icon-btn subtle" data-action="edit-task" data-id="${task.id}" aria-label="编辑任务">✎</button></div>`).join('')}</div>`).join('') : '<div class="empty-state"><span class="empty-icon">✓</span>没有符合条件的任务。<br /><button class="btn btn-ghost btn-sm" data-action="new-task">创建第一项</button></div>'}</div>
+      <div class="planner-columns"><div class="card"><div class="card-header"><h3>${filtered.length} 项任务</h3><span class="tag teal">${state.tasks.filter((t) => t.status === 'done').length} 已完成</span></div>${Object.keys(groups).length ? Object.entries(groups).map(([key, items]) => `<div class="plan-group"><div class="plan-date ${key === todayKey() ? 'today-label' : ''}">${key === 'none' ? '未设置日期' : formatDate(key, { month: 'long', day: 'numeric', weekday: 'short' })}<span class="tag ${key < todayKey() ? 'orange' : ''}">${key === 'none' ? '' : relativeDue(key)}</span></div>${items.map((task) => `<div class="plan-item" data-task-id="${escapeHtml(task.id)}"><button class="task-check ${task.status === 'done' ? 'done' : ''}" data-action="toggle-task" data-id="${escapeHtml(task.id)}" aria-label="切换完成状态">${task.status === 'done' ? '✓' : ''}</button><div class="priority-dot ${task.priority || 'low'}"></div><div class="plan-copy"><strong class="${task.status === 'done' ? 'done' : ''}">${escapeHtml(task.title)}</strong><p><b>${task.status === 'done' ? '完成进度：' : '现在做：'}</b>${escapeHtml(task.status === 'done' ? `全部 ${taskSteps(task).length || 1} 步` : taskNextStep(task))}</p>${task.desc && task.desc !== task.nextStep ? `<small class="plan-note">${escapeHtml(task.desc)}</small>` : ''}<span class="plan-meta">${escapeHtml(task.category || '未分类')}${taskStepProgress(task) ? ` · ${taskStepProgress(task)}` : ''}</span>${taskStepChecklist(task)}</div>${task.status !== 'done' && taskSteps(task).some((step) => !step.done) ? `<button class="btn btn-primary btn-xs" data-action="advance-task" data-id="${escapeHtml(task.id)}">✓ 完成此步</button>` : ''}<button class="icon-btn subtle" data-action="edit-task" data-id="${escapeHtml(task.id)}" aria-label="编辑任务">✎</button></div>`).join('')}</div>`).join('') : '<div class="empty-state"><span class="empty-icon">✓</span>没有符合条件的任务。<br /><button class="btn btn-ghost btn-sm" data-action="new-task">创建第一项</button></div>'}</div>
         <div class="card"><div class="card-header"><h3>学期目标</h3><button class="muted-link" data-action="new-goal">＋ 添加</button></div><div class="milestone-list">${state.goals.length ? state.goals.map((goal) => `<div class="milestone"><div class="milestone-top"><strong>${escapeHtml(goal.title)}</strong><span>${goal.progress || 0}%</span></div><p class="form-hint">${escapeHtml(goal.target || '')} · 截止 ${formatShort(goal.due)}</p><div class="progress-track"><div class="progress-fill" style="width:${clamp(Number(goal.progress) || 0, 0, 100)}%"></div></div><div class="item-actions" style="opacity:1;margin-top:8px"><button class="btn btn-ghost btn-sm" data-action="edit-goal" data-id="${goal.id}">编辑</button><button class="btn btn-ghost btn-sm" data-action="delete-goal" data-id="${goal.id}">删除</button></div></div>`).join('') : '<div class="empty-state">还没有目标，给这个学期一个方向吧。</div>'}</div></div></div>`;
   }
 
@@ -1096,7 +1179,7 @@
     const notificationActionLabel = notification.permission === 'granted'
       ? '<div class="notification-actions"><span class="notification-state success">✓ 已授权</span><button class="btn btn-ghost btn-sm" data-action="test-notification">发送测试</button></div>'
       : notification.permission === 'denied'
-        ? '<span class="notification-state error">需在浏览器或系统设置中允许</span>'
+        ? '<button class="btn btn-warning btn-sm" data-action="open-notification-center">查看重新开启方法</button>'
         : notificationAction;
     return `${viewHeading('Workspace', '设置', '调整你的学期、外观与数据备份。', '<button class="btn btn-primary" data-action="save-settings">保存设置</button>')}
       <div class="settings-grid">
@@ -1116,7 +1199,7 @@
         </div>
         <div>
           <div class="card card-pad"><div class="eyebrow">Backup & sync</div><h3>数据安全</h3><p class="settings-copy">最后保存：${updated}<br />数据只在本机保存，建议每周导出一次备份。</p><div class="settings-actions"><button class="btn btn-primary" data-action="export-json">↓ 导出 JSON 备份</button><button class="btn btn-ghost" data-action="import-json">↑ 导入备份</button><button class="btn btn-ghost" data-action="export-csv">导出课表 CSV</button></div></div>
-          <div class="card card-pad update-card"><div class="eyebrow">Update center</div><h3>CampusFlow ${APP_VERSION}</h3><p class="settings-copy">最近更新：任务日历自动清理、浏览器前进后退、专注恢复、移动端无障碍与极窄屏优化。</p><button class="btn btn-ghost btn-sm" data-action="check-update">检查更新</button><span class="update-time">本地数据版本 ${state.schemaVersion || 1} · ${updated}</span></div>
+          <div class="card card-pad update-card"><div class="eyebrow">Update center</div><h3>CampusFlow ${APP_VERSION}</h3><p class="settings-copy">最近更新：提醒中心、设备通知重新授权引导、完整任务步骤清单与“现在做”高亮。</p><button class="btn btn-ghost btn-sm" data-action="check-update">检查更新</button><span class="update-time">本地数据版本 ${state.schemaVersion || 1} · ${updated}</span></div>
           <div class="card card-pad shortcuts-card"><div class="eyebrow">Shortcuts</div><h3>快捷键</h3><div class="shortcut-row"><kbd>N</kbd><span>新建任务</span><kbd>T</kbd><span>回到今天</span></div><div class="shortcut-row"><kbd>⌘/Ctrl K</kbd><span>聚焦搜索</span><kbd>Esc</kbd><span>关闭弹窗</span></div></div>
         </div>
       </div>`;
@@ -1726,7 +1809,8 @@
     }
     modal.innerHTML = `<div class="modal-head"><div><h2 id="modal-title">${title}</h2>${subtitle ? `<p>${subtitle}</p>` : ''}</div><button class="icon-btn" data-action="close-modal" aria-label="关闭">×</button></div>${body}`;
     backdrop.hidden = false;
-    const first = $('form input:not([type="hidden"]), form select, form textarea, form button[type="submit"]', modal)
+    const first = $('[data-autofocus]', modal)
+      || $('form input:not([type="hidden"]), form select, form textarea, form button[type="submit"]', modal)
       || $('[data-action="close-modal"]', modal);
     if (first) window.setTimeout(() => first.focus(), 20);
     modal.dataset.context = options && options.context ? options.context : '';
@@ -1803,11 +1887,25 @@
     }
     const action = target.dataset.action;
     const id = target.dataset.id;
-    if (action === 'go-view') return setView(target.dataset.view);
+    if (action === 'go-view') {
+      if (target.closest('#modal')) closeModal();
+      return setView(target.dataset.view);
+    }
     if (action === 'focus-search') { $('#global-search')?.focus(); return; }
     if (action === 'toggle-sidebar') return setSidebarOpen(!$('#sidebar')?.classList.contains('open'));
     if (action === 'close-sidebar') return setSidebarOpen(false, { returnFocus: true });
     if (action === 'toggle-theme') { state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark'; saveState(); render(); return; }
+    if (action === 'open-notification-center') { openNotificationCenter(); return; }
+    if (action === 'recheck-notification') {
+      const status = notificationStatus();
+      if (status.permission === 'granted') {
+        requestBrowserNotification();
+      } else {
+        openNotificationCenter();
+        showToast(status.permission === 'denied' ? '仍未检测到权限，请确认浏览器和系统通知均已设为允许，然后刷新页面' : status.label, 'error', 6500);
+      }
+      return;
+    }
     if (action === 'request-notification') { requestBrowserNotification(); return; }
     if (action === 'test-notification') { sendTestNotification(); return; }
     if (action === 'go-today') { currentWeek = startOfWeek(new Date()); calendarCursor = new Date(); setView('dashboard'); return; }
