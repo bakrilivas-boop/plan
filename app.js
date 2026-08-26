@@ -6,16 +6,22 @@
   'use strict';
 
   const STORAGE_KEY = 'campusflow-state-v1';
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.6.0';
   const CURRENT_CHANGELOG = {
     version: APP_VERSION,
     date: '2026-08-26',
-    text: '发布前稳定性更新：完善双历日期详情、相册兼容、通知声音和数据安全提示。'
+    text: '课表截图识别升级：支持 11 小节教务截图、彩色课程块精读；新增稳定转场、筛选反馈和 reduced-motion 适配。'
   };
   const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
   const COLORS = ['teal', 'orange', 'purple', 'blue'];
   // OCR 仅在用户主动选择截图后按需加载；识别在浏览器本地完成，不上传图片。
   const OCR_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+  const OCR_MAX_SOURCE_PERIOD = 12;
+  const COMMON_COURSE_NAMES = [
+    '数据结构', '大学体育', '高等数学', '人工智能通识', '大学英语', '大学物理实验',
+    '中国近现代史纲要', '大学物理', '大学生心理健康教育', '线性代数', '概率论与数理统计',
+    '计算机网络', '操作系统', '数据库原理', '马克思主义基本原理', '思想道德与法治'
+  ];
   const isNativeApp = () => Boolean(window.Capacitor?.isNativePlatform?.());
   const nativeNotifications = () => {
     if (!window.Capacitor) return null;
@@ -1156,17 +1162,18 @@
   }
 
   function setView(view) {
-    currentView = VIEW_TITLES[view] ? view : 'dashboard';
-    const nextUrl = `${location.pathname}${location.search}#${currentView}`;
-    if (history.pushState && location.hash !== `#${currentView}`) history.pushState(null, '', nextUrl);
-    $$('.nav-item').forEach((item) => {
-      const active = item.dataset.view === currentView;
-      item.classList.toggle('active', active);
-      item.setAttribute('aria-current', active ? 'page' : 'false');
-    });
-    $('#page-title').textContent = VIEW_TITLES[currentView];
-    setSidebarOpen(false, { returnFocus: true });
-    render();
+    const nextView = VIEW_TITLES[view] ? view : 'dashboard';
+    if (nextView === currentView) { setSidebarOpen(false, { returnFocus: true }); return; }
+    const update = () => {
+      currentView = nextView;
+      const nextUrl = `${location.pathname}${location.search}#${currentView}`;
+      if (history.pushState && location.hash !== `#${currentView}`) history.pushState(null, '', nextUrl);
+      setSidebarOpen(false, { returnFocus: true });
+      render({ motion: 'view' });
+    };
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!reduced && typeof document.startViewTransition === 'function') document.startViewTransition(update);
+    else update();
   }
 
   function setSidebarOpen(open, options) {
@@ -1207,7 +1214,7 @@
     setSidebarOpen(sidebar.classList.contains('open'), { focusMenu: false });
   }
 
-  function render() {
+  function render(options) {
     document.body.classList.toggle('dark', state.settings.theme === 'dark');
     document.documentElement.dataset.density = state.settings.density || 'comfortable';
     $$('.nav-item').forEach((item) => {
@@ -1241,6 +1248,13 @@
     if (!container) return;
     const views = { dashboard: renderDashboard, planner: renderPlanner, timetable: renderTimetable, calendar: renderCalendar, habits: renderHabits, notes: renderNotes, insights: renderInsights, focus: renderFocus, settings: renderSettings };
     container.innerHTML = (views[currentView] || renderDashboard)();
+    if (options?.motion && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      container.classList.remove('view-enter', 'filter-enter', 'slide-enter');
+      // Force one style boundary so repeated filters and date switches retrigger.
+      void container.offsetWidth;
+      container.classList.add(options.motion === 'filter' ? 'filter-enter' : options.motion === 'slide' ? 'slide-enter' : 'view-enter');
+      window.setTimeout(() => container.classList.remove('view-enter', 'filter-enter', 'slide-enter'), 360);
+    }
     bindViewShortcuts();
   }
 
@@ -1699,10 +1713,180 @@
     return `<div class="ocr-progress" role="status" aria-live="polite"><div class="ocr-progress-icon">▧</div><h3>正在识别课表截图</h3><p id="ocr-progress-label">正在加载本地 OCR 引擎…</p><progress id="ocr-progress-bar" value="0" max="100"></progress><p class="form-hint">首次使用需要下载中文识别模型，图片只在本机处理。</p><div class="modal-foot"><button type="button" class="btn btn-ghost" data-action="close-modal">取消</button></div></div>`;
   }
 
+  function loadOcrImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+      image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('无法读取这张图片，请重新从相册选择')); };
+      image.src = url;
+    });
+  }
+
+  async function prepareOcrCanvas(file) {
+    const image = await loadOcrImage(file);
+    const longest = Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height);
+    const scale = Math.min(1, 2400 / Math.max(1, longest));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+    canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    // Let the progress modal paint before the CPU-heavy pixel scan starts.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    return canvas;
+  }
+
+  function median(values) {
+    const sorted = values.filter(Number.isFinite).slice().sort((a, b) => a - b);
+    return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  }
+
+  function detectColoredCourseBlocks(canvas) {
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const { width, height } = canvas;
+    const pixels = context.getImageData(0, 0, width, height).data;
+    const stride = Math.max(3, Math.round(Math.max(width, height) / 700));
+    const gridWidth = Math.ceil(width / stride);
+    const gridHeight = Math.ceil(height / stride);
+    const total = gridWidth * gridHeight;
+    const mask = new Uint8Array(total);
+    const red = new Uint8Array(total);
+    const green = new Uint8Array(total);
+    const blue = new Uint8Array(total);
+    for (let gy = 0; gy < gridHeight; gy += 1) {
+      const y = Math.min(height - 1, gy * stride + Math.floor(stride / 2));
+      for (let gx = 0; gx < gridWidth; gx += 1) {
+        const x = Math.min(width - 1, gx * stride + Math.floor(stride / 2));
+        const source = (y * width + x) * 4;
+        const index = gy * gridWidth + gx;
+        const r = pixels[source];
+        const g = pixels[source + 1];
+        const b = pixels[source + 2];
+        red[index] = r; green[index] = g; blue[index] = b;
+        const high = Math.max(r, g, b);
+        const low = Math.min(r, g, b);
+        if (high - low >= 38 && high >= 105 && low <= 235) mask[index] = 1;
+      }
+    }
+    const visited = new Uint8Array(total);
+    const queue = new Int32Array(total);
+    const candidates = [];
+    const minWidth = width * 0.055;
+    const maxWidth = width * 0.42;
+    const minHeight = height * 0.035;
+    const maxHeight = height * 0.52;
+    for (let start = 0; start < total; start += 1) {
+      if (!mask[start] || visited[start]) continue;
+      let head = 0;
+      let tail = 1;
+      let count = 0;
+      let minX = gridWidth;
+      let maxX = 0;
+      let minY = gridHeight;
+      let maxY = 0;
+      queue[0] = start;
+      visited[start] = 1;
+      while (head < tail) {
+        const current = queue[head++];
+        count += 1;
+        const x = current % gridWidth;
+        const y = Math.floor(current / gridWidth);
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        const neighbors = [current - 1, current + 1, current - gridWidth, current + gridWidth];
+        for (const next of neighbors) {
+          if (next < 0 || next >= total || visited[next] || !mask[next]) continue;
+          const nx = next % gridWidth;
+          if (Math.abs(nx - x) > 1) continue;
+          const colorDistance = Math.abs(red[current] - red[next]) + Math.abs(green[current] - green[next]) + Math.abs(blue[current] - blue[next]);
+          if (colorDistance > 48) continue;
+          visited[next] = 1;
+          queue[tail++] = next;
+        }
+      }
+      const x0 = minX * stride;
+      const y0 = minY * stride;
+      const x1 = Math.min(width, (maxX + 1) * stride);
+      const y1 = Math.min(height, (maxY + 1) * stride);
+      const boxWidth = x1 - x0;
+      const boxHeight = y1 - y0;
+      if (count < 120 || boxWidth < minWidth || boxWidth > maxWidth || boxHeight < minHeight || boxHeight > maxHeight) continue;
+      if (y0 < height * 0.16 || y0 > height * 0.9 || x1 < width * 0.08) continue;
+      candidates.push({ x0, y0, x1, y1, width: boxWidth, height: boxHeight });
+    }
+    const typicalWidth = median(candidates.filter((box) => box.width <= width * 0.2).map((box) => box.width));
+    const typicalHeight = median(candidates.filter((box) => box.height <= height * 0.22).map((box) => box.height));
+    const splitCandidates = candidates.flatMap((box) => {
+      const columns = typicalWidth && box.width > typicalWidth * 1.55 ? clamp(Math.round(box.width / typicalWidth), 1, 3) : 1;
+      const rows = typicalHeight && box.height > typicalHeight * 1.55 ? clamp(Math.round(box.height / typicalHeight), 1, 4) : 1;
+      if (columns === 1 && rows === 1) return [box];
+      const boxes = [];
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          const x0 = box.x0 + box.width * column / columns;
+          const x1 = box.x0 + box.width * (column + 1) / columns;
+          const y0 = box.y0 + box.height * row / rows;
+          const y1 = box.y0 + box.height * (row + 1) / rows;
+          boxes.push({ x0, y0, x1, y1, width: x1 - x0, height: y1 - y0 });
+        }
+      }
+      return boxes;
+    });
+    return splitCandidates
+      .sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
+      .filter((box, index, all) => !all.slice(0, index).some((other) => {
+        const overlapX = Math.max(0, Math.min(box.x1, other.x1) - Math.max(box.x0, other.x0));
+        const overlapY = Math.max(0, Math.min(box.y1, other.y1) - Math.max(box.y0, other.y0));
+        return overlapX * overlapY > Math.min(box.width * box.height, other.width * other.height) * 0.72;
+      }));
+  }
+
+  function enhancedCourseBlockCanvas(sourceCanvas, box) {
+    const inset = Math.max(1, Math.round(Math.min(box.width, box.height) * 0.012));
+    const x = Math.max(0, Math.round(box.x0 + inset));
+    const y = Math.max(0, Math.round(box.y0 + inset));
+    const width = Math.max(1, Math.min(sourceCanvas.width - x, Math.round(box.width - inset * 2)));
+    const height = Math.max(1, Math.min(sourceCanvas.height - y, Math.round(box.height - inset * 2)));
+    const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    const image = sourceContext.getImageData(x, y, width, height);
+    for (let index = 0; index < image.data.length; index += 4) {
+      const r = image.data[index];
+      const g = image.data[index + 1];
+      const b = image.data[index + 2];
+      const high = Math.max(r, g, b);
+      const low = Math.min(r, g, b);
+      const isLightText = low >= 165 && high - low <= 70;
+      const value = isLightText ? 0 : 255;
+      image.data[index] = value;
+      image.data[index + 1] = value;
+      image.data[index + 2] = value;
+      image.data[index + 3] = 255;
+    }
+    const binary = document.createElement('canvas');
+    binary.width = width;
+    binary.height = height;
+    binary.getContext('2d').putImageData(image, 0, 0);
+    const padding = 12;
+    const scale = width < 260 ? 2 : 1;
+    const output = document.createElement('canvas');
+    output.width = (width + padding * 2) * scale;
+    output.height = (height + padding * 2) * scale;
+    const outputContext = output.getContext('2d');
+    outputContext.fillStyle = '#fff';
+    outputContext.fillRect(0, 0, output.width, output.height);
+    outputContext.imageSmoothingEnabled = false;
+    outputContext.drawImage(binary, padding * scale, padding * scale, width * scale, height * scale);
+    return output;
+  }
+
   async function recognizeTimetableImage(file) {
     const Tesseract = await loadTesseract();
+    let recognizingBlocks = false;
     const logger = (info) => {
-      if (!info) return;
+      if (!info || recognizingBlocks) return;
       const statusMap = { 'loading tesseract core': '加载 OCR 核心…', 'initializing tesseract': '初始化识别器…', 'loading language traineddata': '下载中文识别模型…', 'initializing api': '准备中文识别…', recognizing: '正在识别表格文字…' };
       updateOcrProgress(statusMap[info.status] || info.status || '正在识别…', info.progress);
     };
@@ -1712,11 +1896,30 @@
     const worker = await Tesseract.createWorker(['chi_sim', 'eng'], 1, { logger });
     activeOcrWorker = worker;
     try {
+      updateOcrProgress('正在分析课表版式…', 0.08);
+      const canvas = await prepareOcrCanvas(file);
+      const detectedBlocks = detectColoredCourseBlocks(canvas);
       if (worker.setParameters) await worker.setParameters({ preserve_interword_spaces: '1', tessedit_pageseg_mode: '6' });
       // Tesseract v5 requires an explicit output request for layout/word boxes.
       // Without blocks, many builds return only text and spatial timetable parsing cannot run.
-      const result = await worker.recognize(file, {}, { text: true, blocks: true });
-      return result && result.data ? result.data : result;
+      const result = await worker.recognize(canvas, {}, { text: true, blocks: true });
+      const data = result && result.data ? result.data : result;
+      recognizingBlocks = true;
+      const courseBlocks = [];
+      for (let index = 0; index < detectedBlocks.length; index += 1) {
+        const box = detectedBlocks[index];
+        updateOcrProgress(`正在精读课程块 ${index + 1} / ${detectedBlocks.length}…`, 0.58 + (index / Math.max(1, detectedBlocks.length)) * 0.38);
+        const enhanced = enhancedCourseBlockCanvas(canvas, box);
+        if (worker.setParameters) await worker.setParameters({ preserve_interword_spaces: '1', tessedit_pageseg_mode: '6' });
+        const blockResult = await worker.recognize(enhanced, {}, { text: true });
+        const blockData = blockResult && blockResult.data ? blockResult.data : blockResult;
+        courseBlocks.push({ ...box, text: normalizeOcrText(blockData && blockData.text), confidence: Number(blockData && blockData.confidence) || 0 });
+      }
+      data.courseBlocks = courseBlocks;
+      data.imageWidth = canvas.width;
+      data.imageHeight = canvas.height;
+      updateOcrProgress('正在整理课程名称和节次…', 0.98);
+      return data;
     } finally {
       if (activeOcrWorker === worker) activeOcrWorker = null;
       if (worker && worker.terminate) {
@@ -1742,7 +1945,7 @@
   }
 
   function chineseNumber(value) {
-    const map = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 日: 7, 天: 7 };
+    const map = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12, 日: 7, 天: 7 };
     if (map[value]) return map[value];
     const number = Number(value);
     return Number.isFinite(number) ? number : null;
@@ -1757,14 +1960,14 @@
     return { mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6, sun: 7 }[english] || null;
   }
 
-  function periodFromOcrText(value) {
+  function periodFromOcrText(value, maxPeriod = OCR_MAX_SOURCE_PERIOD) {
     const text = normalizeOcrText(value);
     // Only accept an explicit “第 1 节” marker or a standalone period number.
     // This avoids treating course codes such as CS204/MATH201 as row labels.
-    const match = text.match(/(?:第\s*)?([一二三四五六七八九十]|\d{1,2})\s*(?:节|講|讲|次|时|時)/) || text.match(/^\s*([一二三四五六七八九十]|\d{1,2})\s*[.)、]?\s*$/);
+    const match = text.match(/(?:第\s*)?([一二三四五六七八九十]{1,2}|\d{1,2})\s*(?:节|講|讲|次|时|時)/) || text.match(/^\s*([一二三四五六七八九十]{1,2}|\d{1,2})\s*[.)、]?\s*$/);
     if (!match) return null;
     const period = chineseNumber(match[1]);
-    return period && period >= 1 && period <= PERIODS.length ? period : null;
+    return period && period >= 1 && period <= maxPeriod ? period : null;
   }
 
   function ocrWordList(data) {
@@ -1832,13 +2035,14 @@
       const span = Math.max(1, right - left);
       dayCenters = Array.from({ length: DAY_NAMES.length }, (_, index) => left + span * (index + 0.5) / DAY_NAMES.length);
     }
-    let periodCenters = Array.from({ length: PERIODS.length }, (_, index) => knownPeriods.get(index + 1) || null);
+    const sourcePeriodCount = clamp(Math.max(PERIODS.length, ...Array.from(knownPeriods.keys()), 0), PERIODS.length, OCR_MAX_SOURCE_PERIOD);
+    let periodCenters = Array.from({ length: sourcePeriodCount }, (_, index) => knownPeriods.get(index + 1) || null);
     const knownPeriodValues = Array.from(knownPeriods.values());
     if (knownPeriodValues.length >= 2) {
       const sortedKnown = Array.from(knownPeriods.entries()).sort((a, b) => a[0] - b[0]);
       const gaps = [];
       for (let i = 1; i < sortedKnown.length; i += 1) gaps.push((sortedKnown[i][1] - sortedKnown[i - 1][1]) / (sortedKnown[i][0] - sortedKnown[i - 1][0]));
-      const gap = gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] || height / 5;
+      const gap = median(gaps) || height / sourcePeriodCount;
       const anchor = sortedKnown[0];
       periodCenters = periodCenters.map((center, index) => center || anchor[1] + (index + 1 - anchor[0]) * gap);
     } else {
@@ -1846,9 +2050,9 @@
       const top = ys[Math.floor(ys.length * 0.2)] || 0;
       const bottom = ys[Math.max(0, Math.ceil(ys.length * 0.95) - 1)] || height;
       const span = Math.max(1, bottom - top);
-      periodCenters = Array.from({ length: PERIODS.length }, (_, index) => top + span * (index + 0.5) / PERIODS.length);
+      periodCenters = Array.from({ length: sourcePeriodCount }, (_, index) => top + span * (index + 0.5) / sourcePeriodCount);
     }
-    return { dayCenters, periodCenters, width, height };
+    return { dayCenters, periodCenters, width, height, knownDayCount: knownDays.size, knownPeriodCount: knownPeriods.size };
   }
 
   function nearestIndex(value, centers) {
@@ -1955,6 +2159,103 @@
     return { name, code: '', teacher, room, day, period, duration: 1, weeks, color: COLORS[(day + period) % COLORS.length], credits: 0 };
   }
 
+  function levenshteinDistance(left, right) {
+    const a = Array.from(left);
+    const b = Array.from(right);
+    const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= a.length; i += 1) {
+      let diagonal = previous[0];
+      previous[0] = i;
+      for (let j = 1; j <= b.length; j += 1) {
+        const above = previous[j];
+        previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+        diagonal = above;
+      }
+    }
+    return previous[b.length];
+  }
+
+  function correctCommonCourseName(value) {
+    let name = compactOcrText(value)
+      .replace(/[|｜¦_“”'"·•:：,，;；()（）【】\[\]{}]/g, '')
+      .replace(/[—–−－﹣]/g, '-')
+      .trim();
+    const hasLevelTwo = /(?:Ⅱ|II|I1|1I|ll|11)$/i.test(name);
+    const baseName = name.replace(/(?:Ⅱ|II|I1|1I|ll|11)$/i, '');
+    let best = null;
+    COMMON_COURSE_NAMES.forEach((candidate) => {
+      const distance = levenshteinDistance(baseName.toLowerCase(), candidate.toLowerCase());
+      if (!best || distance < best.distance) best = { candidate, distance };
+    });
+    if (best && best.distance <= Math.max(1, Math.floor(best.candidate.length * 0.34))) name = best.candidate;
+    else name = baseName || name;
+    if (hasLevelTwo && /^(?:大学体育|高等数学|大学英语)$/.test(name)) name += ' II';
+    return name;
+  }
+
+  function sourcePeriodToAppPeriod(sourcePeriod) {
+    const source = clamp(Math.round(Number(sourcePeriod) || 1), 1, OCR_MAX_SOURCE_PERIOD);
+    return source <= 8 ? Math.ceil(source / 2) : PERIODS.length;
+  }
+
+  function inferCourseBlockPosition(block, blocks, grid) {
+    const blockWidth = median(blocks.map((item) => item.width));
+    let day = null;
+    if (grid.knownDayCount >= 2) {
+      const nearestDay = nearestIndex((block.x0 + block.x1) / 2, grid.dayCenters);
+      if (nearestDay.index >= 0) day = nearestDay.index + 1;
+    }
+    if (!day) {
+      // Most mobile timetable screenshots contain one narrow period gutter plus
+      // seven equal weekday columns. A no-gutter export starts the first block
+      // near x=0, so shift that layout by one column.
+      const startsAtEdge = Math.min(...blocks.map((item) => item.x0)) < blockWidth * 0.45;
+      day = Math.round(block.x0 / Math.max(1, blockWidth)) + (startsAtEdge ? 1 : 0);
+    }
+    day = clamp(day, 1, DAY_NAMES.length);
+    const gap = median(grid.periodCenters.slice(1).map((center, index) => center - grid.periodCenters[index])) || grid.height / Math.max(1, grid.periodCenters.length);
+    const covered = grid.periodCenters
+      .map((center, index) => ({ center, period: index + 1 }))
+      .filter((item) => item.center >= block.y0 - gap * 0.18 && item.center <= block.y1 + gap * 0.18);
+    const sourcePeriod = covered.length
+      ? covered[0].period
+      : nearestIndex(block.y0 + gap * 0.48, grid.periodCenters).index + 1;
+    return { day, sourcePeriod: clamp(sourcePeriod, 1, OCR_MAX_SOURCE_PERIOD), period: sourcePeriodToAppPeriod(sourcePeriod) };
+  }
+
+  function extractOcrRoom(value) {
+    const compact = compactOcrText(value);
+    const matches = Array.from(compact.matchAll(/(?:@|＠)?([\u4e00-\u9fa5A-Za-z]{1,3})\s*[-—–]\s*(\d{2,4})/g));
+    if (!matches.length) return '';
+    const preferred = matches.find((match) => /^[@＠]/.test(match[0])) || matches[matches.length - 1];
+    const cjkPrefix = preferred[1].replace(/[A-Za-z]/g, '');
+    const prefix = cjkPrefix || preferred[1];
+    return `${prefix}-${preferred[2]}`;
+  }
+
+  function parseDetectedCourseBlock(block, day, period, supplementaryText) {
+    const raw = normalizeOcrText(block && block.text);
+    if (!raw) return null;
+    const compact = compactOcrText(raw);
+    const roomMatch = compact.match(/(?:@|＠)?([\u4e00-\u9fa5A-Za-z]{1,3})\s*[-—–]\s*(\d{2,4})/);
+    const room = extractOcrRoom(supplementaryText) || extractOcrRoom(raw);
+    const atIndex = raw.search(/[@＠]/);
+    const roomIndex = roomMatch ? compact.indexOf(roomMatch[0]) : -1;
+    let nameSource = atIndex >= 0 ? raw.slice(0, atIndex) : raw;
+    if (atIndex < 0 && roomIndex > 0) nameSource = compact.slice(0, roomIndex);
+    nameSource = nameSource
+      .replace(/\([^)]*\)|（[^）]*）/g, '')
+      .replace(/(?:教师|老师)[:：]?[\u4e00-\u9fa5A-Za-z·]{1,12}/g, '')
+      .replace(/[\d\s@＠]+$/g, '');
+    const name = correctCommonCourseName(nameSource);
+    const levelTwo = /(?:Ⅱ|II|I1|1I|11)/i.test(`${raw} ${supplementaryText || ''}`);
+    if (levelTwo && /^(?:大学体育|高等数学|大学英语)$/.test(name)) name += ' II';
+    const hasCjk = /[\u4e00-\u9fa5]/.test(name);
+    const hasLatinWord = /[A-Za-z]{2,}/.test(name);
+    if (!name || name.length < 2 || name.length > 40 || (!hasCjk && !hasLatinWord)) return null;
+    return { name, code: '', teacher: '', room, day, period, duration: 1, weeks: '1-16', color: COLORS[(day + period) % COLORS.length], credits: 0 };
+  }
+
   function mergeOcrCourse(list, item) {
     if (!item) return;
     const normalizedName = compactOcrText(item.name).toLowerCase();
@@ -1977,12 +2278,51 @@
     list.push(item);
   }
 
+  function reconcileOcrCourses(courses) {
+    const byRoom = new Map();
+    courses.forEach((course) => {
+      if (!course.room) return;
+      const key = compactOcrText(course.room).toLowerCase();
+      (byRoom.get(key) || byRoom.set(key, []).get(key)).push(course);
+    });
+    byRoom.forEach((items) => {
+      const counts = new Map();
+      items.forEach((course) => {
+        const key = compactOcrText(course.name).toLowerCase();
+        const entry = counts.get(key) || { name: course.name, count: 0 };
+        entry.count += 1;
+        counts.set(key, entry);
+      });
+      const consensus = Array.from(counts.values()).sort((a, b) => b.count - a.count)[0];
+      if (!consensus || consensus.count < 2) return;
+      items.forEach((course) => {
+        if (compactOcrText(course.name).toLowerCase() === compactOcrText(consensus.name).toLowerCase()) return;
+        const noisy = /[A-Za-z\d|]/.test(course.name);
+        const distance = levenshteinDistance(compactOcrText(course.name).toLowerCase(), compactOcrText(consensus.name).toLowerCase());
+        if (noisy || distance <= Math.max(2, Math.ceil(consensus.name.length * 0.5))) course.name = consensus.name;
+      });
+    });
+    return courses;
+  }
+
   function parseTimetableOcr(data) {
-    const text = normalizeOcrText(data && data.text);
     const words = ocrWordList(data);
+    // Some Tesseract builds return spatial words but omit the plain `text`
+    // field when a structured output request is used. Keep a readable fallback
+    // so users can inspect what the recognizer actually saw and the line-based
+    // parser still has useful input.
+    const text = normalizeOcrText(data && data.text) || words.map((word) => word.text).join(' ');
     const courses = [];
-    if (words.length >= 4) {
-      const grid = inferGridCenters(words, data);
+    const detectedBlocks = Array.isArray(data && data.courseBlocks) ? data.courseBlocks.filter((block) => block && block.text) : [];
+    const grid = words.length >= 4 ? inferGridCenters(words, data) : null;
+    if (detectedBlocks.length && grid) {
+      detectedBlocks.forEach((block) => {
+        const position = inferCourseBlockPosition(block, detectedBlocks, grid);
+        const supplementaryText = ocrCellText(words.filter((word) => word.cx >= block.x0 && word.cx <= block.x1 && word.cy >= block.y0 && word.cy <= block.y1));
+        mergeOcrCourse(courses, parseDetectedCourseBlock(block, position.day, position.period, supplementaryText));
+      });
+    }
+    if (!detectedBlocks.length && grid) {
       const cells = new Map();
       const columnWidth = Math.max(30, Math.abs(grid.dayCenters[1] - grid.dayCenters[0]) * 0.72);
       const rowHeight = Math.max(25, Math.abs(grid.periodCenters[1] - grid.periodCenters[0]) * 0.72);
@@ -1995,9 +2335,9 @@
         (cells.get(key) || cells.set(key, []).get(key)).push(word);
       });
       cells.forEach((cellWords, key) => {
-        const [day, period] = key.split(':').map(Number);
+        const [day, sourcePeriod] = key.split(':').map(Number);
         const cellText = ocrCellText(cellWords);
-        mergeOcrCourse(courses, parseCourseCell(cellText, day, period));
+        mergeOcrCourse(courses, parseCourseCell(cellText, day, sourcePeriodToAppPeriod(sourcePeriod)));
       });
     }
     // 若截图没有清晰表格边界，使用带“周一/第 1 节”的行式识别结果兜底。
@@ -2010,7 +2350,7 @@
         if (day) currentDay = day;
         if (period) currentPeriod = period;
         const stripped = line.replace(/(?:周|星期|礼拜)\s*[一二三四五六日天1-7]/g, '').replace(/(?:第\s*)?[一二三四五六七八九十\d]{1,2}\s*(?:节|讲|次)/g, '').trim();
-        if (currentDay && currentPeriod && stripped && stripped.length > 1) mergeOcrCourse(courses, parseCourseCell(stripped, currentDay, currentPeriod));
+        if (currentDay && currentPeriod && stripped && stripped.length > 1) mergeOcrCourse(courses, parseCourseCell(stripped, currentDay, sourcePeriodToAppPeriod(currentPeriod)));
       });
     }
     // 最后尝试识别“周一 第1节 课程名 教师/教室”同一行的格式。
@@ -2020,11 +2360,11 @@
         const period = periodFromOcrText(line);
         if (day && period) {
           const stripped = line.replace(/(?:周|星期|礼拜)\s*[一二三四五六日天1-7]/g, '').replace(/(?:第\s*)?[一二三四五六七八九十\d]{1,2}\s*(?:节|讲|次)/g, '').trim();
-          mergeOcrCourse(courses, parseCourseCell(stripped, day, period));
+          mergeOcrCourse(courses, parseCourseCell(stripped, day, sourcePeriodToAppPeriod(period)));
         }
       });
     }
-    return { courses: courses.slice(0, 80), text: text || '（OCR 未返回文字）' };
+    return { courses: reconcileOcrCourses(courses).slice(0, 80), text: text || '（OCR 未返回文字）' };
   }
 
   function ocrPreviewBody(parsed) {
@@ -2037,7 +2377,7 @@
       <div class="ocr-course-fields"><div class="ocr-course-title"><input data-field="name" required maxlength="60" value="${escapeHtml(course.name)}" aria-label="课程名称" /><span class="tag teal">识别 ${index + 1}</span></div>
       <div class="ocr-course-grid"><label>星期<select data-field="day">${DAY_NAMES.map((name, i) => `<option value="${i + 1}" ${Number(course.day) === i + 1 ? 'selected' : ''}>周${name}</option>`).join('')}</select></label><label>节次<select data-field="period">${PERIODS.map((period) => `<option value="${period.id}" ${Number(course.period) === period.id ? 'selected' : ''}>第 ${period.id} 节</option>`).join('')}</select></label><label>连上<input data-field="duration" type="number" min="1" max="3" value="${clamp(Number(course.duration) || 1, 1, 3)}" /></label><label>周次<input data-field="weeks" value="${escapeHtml(course.weeks || '1-16')}" placeholder="1-16 / 单周" /></label></div>
       <div class="ocr-course-grid"><label>教室<input data-field="room" maxlength="30" value="${escapeHtml(course.room || '')}" placeholder="教室 / 地点" /></label><label>教师<input data-field="teacher" maxlength="30" value="${escapeHtml(course.teacher || '')}" placeholder="教师" /></label><label>颜色<select data-field="color">${COLORS.map((color) => `<option value="${color}" ${(course.color || 'teal') === color ? 'selected' : ''}>${{ teal: '青绿', orange: '橙色', purple: '紫色', blue: '蓝色' }[color]}</option>`).join('')}</select></label></div></div></div>`).join('');
-    return `<form data-form="ocr-courses"><div class="ocr-preview-summary"><strong>识别到 ${courses.length} 门课程</strong><span>请核对并编辑后再导入；已有课程不会被覆盖。</span></div><div class="ocr-course-list">${rows}</div><details class="ocr-raw"><summary>查看 OCR 原始文字</summary><pre class="ocr-raw-text">${escapeHtml(parsed.text || '')}</pre></details><div class="modal-foot"><button type="button" class="btn btn-ghost" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit">导入选中课程</button></div></form>`;
+    return `<form data-form="ocr-courses"><div class="ocr-preview-summary"><strong>识别到 ${courses.length} 个课程时段</strong><span>请核对并编辑后再导入；已有课程不会被覆盖。</span></div><div class="ocr-course-list">${rows}</div><details class="ocr-raw"><summary>查看 OCR 原始文字</summary><pre class="ocr-raw-text">${escapeHtml(parsed.text || '')}</pre></details><div class="modal-foot"><button type="button" class="btn btn-ghost" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit">导入选中课程</button></div></form>`;
   }
 
   function importTimetableImage(file) {
@@ -2138,6 +2478,10 @@
     }
     modal.innerHTML = `<div class="modal-head"><div><h2 id="modal-title">${title}</h2>${subtitle ? `<p>${subtitle}</p>` : ''}</div><button class="icon-btn" data-action="close-modal" aria-label="关闭">×</button></div>${body}`;
     backdrop.hidden = false;
+    backdrop.classList.remove('modal-opening');
+    void backdrop.offsetWidth;
+    backdrop.classList.add('modal-opening');
+    window.setTimeout(() => backdrop.classList.remove('modal-opening'), 300);
     const first = $('[data-autofocus]', modal)
       || $('form input:not([type="hidden"]), form select, form textarea, form button[type="submit"]', modal)
       || $('[data-action="close-modal"]', modal);
@@ -2279,15 +2623,15 @@
       return;
     }
     if (action === 'delete-task') { if (window.confirm('确定删除这项任务吗？删除后仍可通过 JSON 备份恢复。')) { state.tasks = state.tasks.filter((item) => item.id !== id); saveState(); render(); showToast('任务已删除'); } return; }
-    if (action === 'planner-filter') { plannerFilter = target.dataset.filter || 'all'; render(); return; }
+    if (action === 'planner-filter') { plannerFilter = target.dataset.filter || 'all'; render({ motion: 'filter' }); return; }
     if (action === 'ocr-import') { $('#ocr-file')?.click(); return; }
     if (action === 'new-course') { openModal('添加课程', '固定课程会显示在每周课表中，可随时修改。', courseForm(null, { day: target.dataset.day, period: target.dataset.period })); return; }
     if (action === 'edit-course') { const course = state.courses.find((item) => item.id === id); if (course) openModal('编辑课程', '修改后会保留在本地课表中。', courseForm(course)); return; }
     if (action === 'delete-course') { if (window.confirm('确定删除这门课程吗？')) { state.courses = state.courses.filter((item) => item.id !== id); saveState(); closeModal(); render(); showToast('课程已删除'); } return; }
-    if (action === 'week-prev') { currentWeek = addDays(currentWeek, -7); render(); return; }
-    if (action === 'week-next') { currentWeek = addDays(currentWeek, 7); render(); return; }
+    if (action === 'week-prev') { currentWeek = addDays(currentWeek, -7); render({ motion: 'slide' }); return; }
+    if (action === 'week-next') { currentWeek = addDays(currentWeek, 7); render({ motion: 'slide' }); return; }
     if (action === 'go-current-week') { currentWeek = startOfWeek(new Date()); mobileTimetableDay = (new Date().getDay() || 7) - 1; render(); return; }
-    if (action === 'timetable-day') { mobileTimetableDay = clamp(Number(target.dataset.dayIndex) || 0, 0, DAY_NAMES.length - 1); render(); return; }
+    if (action === 'timetable-day') { mobileTimetableDay = clamp(Number(target.dataset.dayIndex) || 0, 0, DAY_NAMES.length - 1); render({ motion: 'slide' }); return; }
     if (action === 'new-habit') { openModal('添加习惯', '从一个小而确定的动作开始。', habitForm()); return; }
     if (action === 'edit-habit') { const habit = state.habits.find((item) => item.id === id); if (habit) openModal('编辑习惯', '可以随时调整目标，不需要完美。', habitForm(habit)); return; }
     if (action === 'delete-habit') { if (window.confirm('确定删除这个习惯及其历史打卡吗？建议先导出 JSON 备份。')) { state.habits = state.habits.filter((item) => item.id !== id); saveState(); closeModal(); render(); showToast('习惯及其历史打卡已删除'); } return; }
@@ -2307,8 +2651,8 @@
     if (action === 'delete-event') { if (window.confirm('确定删除这个事件吗？')) { state.events = state.events.filter((e) => e.id !== id); saveState(); closeModal(); render(); showToast('事件已删除'); } return; }
     if (action === 'calendar-day' || action === 'select-day') { const key = target.dataset.date; if (key) { calendarCursor = dateFromKey(key); if (action === 'calendar-day') { const item = target.dataset.eventId ? state.events.find((e) => e.id === target.dataset.eventId && !e.autoGenerated) : null; if (item) openModal('编辑日历事件', '修改后会同步到日历视图。', eventForm(item)); else openCalendarDay(key); } else { setView('calendar'); } } return; }
     if (action === 'calendar-add-event') { const key = target.dataset.date; if (key) openModal('新建日历事件', formatDate(key), eventForm({ date: key })); return; }
-    if (action === 'month-prev') { calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1); render(); return; }
-    if (action === 'month-next') { calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1); render(); return; }
+    if (action === 'month-prev') { calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() - 1, 1); render({ motion: 'slide' }); return; }
+    if (action === 'month-next') { calendarCursor = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth() + 1, 1); render({ motion: 'slide' }); return; }
     if (action === 'calendar-today') { calendarCursor = new Date(); render(); return; }
     if (action === 'go-focus') { setView('focus'); return; }
     if (action === 'focus-toggle') { toggleFocus(); return; }

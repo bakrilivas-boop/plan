@@ -756,3 +756,32 @@ kbd { min-width: 26px; padding: 3px 6px; border: 1px solid var(--line); border-b
   .notification-guide-actions { display: grid; grid-template-columns: 1fr; }
   .notification-guide-actions .btn { width: 100%; }
 }
+
+/* Motion system: compositor-only transforms keep interaction near 60fps. */
+@keyframes view-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes filter-enter { from { opacity: .35; transform: scale(.992); } to { opacity: 1; transform: scale(1); } }
+@keyframes slide-enter { from { opacity: .45; transform: translateX(9px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-pop-in { from { opacity: 0; transform: translateY(10px) scale(.975); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+::view-transition-old(root) { animation: 110ms ease-out both fade-out; }
+::view-transition-new(root) { animation: 230ms cubic-bezier(.22,.8,.25,1) both view-enter; }
+@keyframes fade-out { to { opacity: 0; transform: translateY(-3px); } }
+
+.view-enter > *, .filter-enter > *, .slide-enter > * { animation: 240ms cubic-bezier(.22,.8,.25,1) both view-enter; }
+.filter-enter > * { animation-name: filter-enter; animation-duration: 180ms; }
+.slide-enter > * { animation-name: slide-enter; animation-duration: 210ms; }
+.view-enter > :nth-child(2) { animation-delay: 28ms; }
+.view-enter > :nth-child(3) { animation-delay: 52ms; }
+.modal-opening { animation: 180ms ease-out both modal-fade-in; }
+.modal-opening .modal { animation: 240ms cubic-bezier(.2,.85,.25,1.08) both modal-pop-in; }
+.btn, .icon-btn, .nav-item, .muted-link, .segmented button, .mobile-day-tab, .course-block, .mobile-course-block, .calendar-cell, .day-tile { transform: translateZ(0); }
+.btn:active, .icon-btn:active, .nav-item:active, .segmented button:active, .mobile-day-tab:active, .calendar-cell:active, .day-tile:active { transform: translateZ(0) scale(.97); }
+.card { contain: layout paint style; }
+.view-container { view-transition-name: main-view; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+  .btn:active, .icon-btn:active, .nav-item:active, .segmented button:active, .mobile-day-tab:active, .calendar-cell:active, .day-tile:active { transform: none; }
+}

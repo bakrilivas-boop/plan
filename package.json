@@ -1,6 +1,6 @@
 {
   "name": "campusflow-sophomore-planner",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "CampusFlow 大二计划网站与 Android 应用",
   "scripts": {
