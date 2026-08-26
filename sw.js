@@ -1,5 +1,5 @@
-const CACHE_NAME = 'campusflow-v1.2.5';
-const APP_SHELL = ['./', './index.html', './styles.css?v=1.2.5', './app.js?v=1.2.5', './manifest.json', './favicon.svg'];
+const CACHE_NAME = 'campusflow-v1.2.6';
+const APP_SHELL = ['./', './index.html', './styles.css?v=1.2.6', './app.js?v=1.2.6', './manifest.json', './favicon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));

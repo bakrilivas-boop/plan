@@ -6,11 +6,11 @@
   'use strict';
 
   const STORAGE_KEY = 'campusflow-state-v1';
-  const APP_VERSION = '1.2.5';
+  const APP_VERSION = '1.2.6';
   const CURRENT_CHANGELOG = {
     version: APP_VERSION,
     date: '2026-08-25',
-    text: '针对不支持通知的手机浏览器补充 Chrome/Edge 使用引导与网址复制入口。'
+    text: '新增设备通知全链路检测，区分网站权限、Service Worker 与手机系统通知问题。'
   };
   const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
   const COLORS = ['teal', 'orange', 'purple', 'blue'];
@@ -524,6 +524,7 @@
   let reminderTimer = null;
   let lastReminderCheckAt = 0;
   let lastReminderDay = todayKey();
+  let lastNotificationDiagnostic = null;
   const pendingReminderKeys = new Set();
 
   function saveState() {
@@ -679,14 +680,38 @@
 
   async function showDeviceNotification(title, options) {
     const status = notificationStatus();
+    lastNotificationDiagnostic = { accepted: false, stage: 'permission', detail: status.label, at: Date.now() };
     if (!status.supported || status.permission !== 'granted') return false;
     const notificationOptions = { icon: './favicon.svg', badge: './favicon.svg', ...options };
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       try {
-        const registration = await navigator.serviceWorker.ready;
+        const registration = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise((_, reject) => window.setTimeout(() => reject(new Error('Service Worker 等待超时')), 5000))
+        ]);
+        if (!registration?.active) throw new Error('Service Worker 尚未激活');
         await registration.showNotification(title, notificationOptions);
+        let queued = null;
+        if (registration.getNotifications) {
+          await new Promise((resolve) => window.setTimeout(resolve, 180));
+          const notifications = await registration.getNotifications({ tag: notificationOptions.tag });
+          queued = notifications.some((item) => item.tag === notificationOptions.tag);
+        }
+        lastNotificationDiagnostic = {
+          accepted: queued !== false,
+          stage: queued === false ? 'queue' : 'system',
+          detail: queued === false ? '浏览器调用成功，但没有在通知队列中找到该通知' : '浏览器已把通知交给手机系统',
+          serviceWorker: registration.active.state,
+          queued,
+          at: Date.now()
+        };
+        if (queued === false) return false;
         return true;
-      } catch (error) { /* Fall through to a window notification on desktop. */ }
+      } catch (error) {
+        lastNotificationDiagnostic = { accepted: false, stage: 'service-worker', detail: error?.message || 'Service Worker 无法显示通知', at: Date.now() };
+        // Desktop browsers may support the window constructor even when the
+        // service worker is still updating; Android intentionally does not.
+      }
     }
     try {
       const notice = new window.Notification(title, notificationOptions);
@@ -695,10 +720,26 @@
         setView('planner');
         notice.close();
       };
+      lastNotificationDiagnostic = { accepted: true, stage: 'system', detail: '浏览器已通过页面通知交给系统', queued: null, at: Date.now() };
       return true;
     } catch (error) {
+      lastNotificationDiagnostic = { accepted: false, stage: 'window', detail: error?.message || '当前浏览器禁止页面直接创建通知', at: Date.now() };
       return false;
     }
+  }
+
+  function notificationTestResult(sent) {
+    const diagnostic = lastNotificationDiagnostic || {};
+    const accepted = sent && diagnostic.accepted;
+    const title = accepted ? '浏览器已接收测试通知' : '测试通知没有进入手机系统';
+    const stateClass = accepted ? 'success' : 'error';
+    const detail = escapeHtml(diagnostic.detail || '没有获得通知链路结果');
+    const next = accepted
+      ? '<li><strong>先下拉手机通知栏检查</strong><span>浏览器已接受通知；若仍完全看不到，问题在 Android 的应用通知层。</span></li><li><strong>打开 Android 设置</strong><span>设置 → 应用 → Chrome（或当前浏览器）→ 通知 → 允许所有通知。</span></li><li><strong>再检查浏览器网站权限</strong><span>Chrome → 设置 → 网站设置 → 通知，确认本站处于“允许”列表，并关闭勿扰模式后重试。</span></li>'
+      : diagnostic.stage === 'permission'
+        ? '<li><strong>允许网站通知</strong><span>点击地址栏的网站设置，将本站“通知”改为允许。</span></li><li><strong>允许浏览器 App 通知</strong><span>Android 设置 → 应用 → 当前浏览器 → 通知 → 允许。</span></li>'
+        : '<li><strong>刷新网页</strong><span>让最新版 Service Worker 完成接管，然后再次测试。</span></li><li><strong>清理旧网站数据</strong><span>Chrome → 设置 → 网站设置 → 本站 → 清除并重置，再重新打开授权。</span></li><li><strong>检查 Android 应用通知</strong><span>设置 → 应用 → Chrome → 通知 → 允许所有通知。</span></li>';
+    return `<div class="notification-guide"><div class="notification-guide-status ${stateClass}"><span class="notification-guide-icon">${accepted ? '✓' : '!'}</span><div><small>测试结果 · ${escapeHtml(diagnostic.stage || 'unknown')}</small><strong>${title}</strong><p>${detail}</p></div></div><ol class="notification-guide-steps">${next}</ol><p class="notification-guide-note">“浏览器已接收”表示网页调用和 Service Worker 正常，不代表 Android 一定展示横幅或响铃；最终显示、声音、震动和勿扰模式由手机系统控制。</p><div class="modal-foot notification-guide-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">关闭</button><button class="btn btn-primary" data-action="test-notification" data-autofocus>再次测试</button></div></div>`;
   }
 
   async function sendBrowserReminder(items, options) {
@@ -856,9 +897,13 @@
     const sent = await showDeviceNotification('CampusFlow · 通知测试成功', {
       body: '设备通知已经连接。以后会告诉你当前第几步，以及现在该做什么。',
       tag: `campusflow-test-${Date.now()}`,
-      data: { view: 'planner' }
+      data: { view: 'planner' },
+      requireInteraction: true,
+      vibrate: [220, 100, 220],
+      timestamp: Date.now()
     });
-    showToast(sent ? '测试通知已发送，请查看系统通知栏' : '测试通知发送失败，请检查系统通知设置', sent ? 'success' : 'error');
+    openModal('设备通知检测', '已检查网站权限、Service Worker 和浏览器通知队列。', notificationTestResult(sent), { context: 'notification-test', preserveReturnFocus: !$('#modal-backdrop')?.hidden });
+    showToast(sent ? '浏览器已接收通知；若通知栏仍没有，请按检测结果检查 Android 应用通知' : '测试失败，请按检测结果逐项修复', sent ? 'success' : 'error', 6500);
   }
 
   function initReminderChecks() {
