@@ -6,11 +6,11 @@
   'use strict';
 
   const STORAGE_KEY = 'campusflow-state-v1';
-  const APP_VERSION = '1.2.4';
+  const APP_VERSION = '1.2.5';
   const CURRENT_CHANGELOG = {
     version: APP_VERSION,
     date: '2026-08-25',
-    text: '新增醒目的提醒中心、任务完整步骤清单与设备通知授权引导。'
+    text: '针对不支持通知的手机浏览器补充 Chrome/Edge 使用引导与网址复制入口。'
   };
   const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
   const COLORS = ['teal', 'orange', 'purple', 'blue'];
@@ -621,10 +621,13 @@
     } else if (!notification.supported) {
       stateClass = 'error';
       stateLabel = notification.permission === 'install-required' ? '需先添加到主屏幕' : '当前环境暂不支持';
+      const android = /Android/i.test(navigator.userAgent || '');
       instructions = notification.permission === 'install-required'
         ? '<li><strong>使用 Safari 打开网站</strong><span>点击分享按钮并选择“添加到主屏幕”。</span></li><li><strong>从桌面图标重新打开</strong><span>不要继续使用原来的 Safari 标签页。</span></li><li><strong>打开提醒中心</strong><span>再点击“立即授权设备通知”。</span></li>'
-        : `<li><strong>设备通知不可用</strong><span>${escapeHtml(notification.label)}</span></li><li><strong>站内提醒仍然有效</strong><span>网页打开时会在首页显示当前步骤。</span></li>`;
-      action = '<button class="btn btn-primary" data-action="go-view" data-view="planner" data-autofocus>查看分步待办</button>';
+        : `<li><strong>复制网站地址</strong><span>当前浏览器没有开放网页通知接口，先复制这个网站地址。</span></li><li><strong>换用 ${android ? 'Chrome 或 Edge' : 'Chrome、Edge 或 Safari 16.4+'}</strong><span>在支持通知的浏览器中粘贴打开；部分 App 内置浏览器会主动禁用系统通知。</span></li><li><strong>回到提醒中心授权</strong><span>点击顶部铃铛，再选择“立即授权设备通知”。在此之前，站内分步提醒仍然有效。</span></li>`;
+      action = notification.permission === 'install-required'
+        ? '<button class="btn btn-primary" data-action="go-view" data-view="planner" data-autofocus>查看分步待办</button>'
+        : '<button class="btn btn-primary" data-action="copy-site-url" data-autofocus>复制网站地址</button><button class="btn btn-ghost" data-action="go-view" data-view="planner">先用站内分步提醒</button>';
     }
     const current = preview ? `<div class="notification-current"><span>当前最需要处理</span><strong>${escapeHtml(preview.title)}</strong><small>现在做：${escapeHtml(taskNextStep(preview))}</small></div>` : '<div class="notification-current"><span>当前状态</span><strong>暂无今天到期或逾期的任务</strong><small>授权后，新任务仍会按步骤提醒。</small></div>';
     return `<div class="notification-guide"><div class="notification-guide-status ${stateClass}"><span class="notification-guide-icon">🔔</span><div><small>设备通知状态</small><strong>${escapeHtml(stateLabel)}</strong><p>${escapeHtml(notification.label)}</p></div></div>${current}<ol class="notification-guide-steps">${instructions}</ol><p class="notification-guide-note">隐私说明：权限只能由你亲自点击并在浏览器弹窗中选择“允许”，网站无法绕过系统替你授权。纯静态网页关闭后不能持续在后台运行，重新打开会立即补查。</p><div class="modal-foot notification-guide-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">稍后</button>${action}</div></div>`;
@@ -833,6 +836,18 @@
     } catch (error) {
       showToast('无法请求通知权限，请检查浏览器和 HTTPS 设置', 'error');
     }
+  }
+
+  async function copySiteUrl() {
+    const url = `${location.origin}${location.pathname}${location.search}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        showToast('网站地址已复制，请用 Chrome 或 Edge 粘贴打开', 'success', 5200);
+        return;
+      }
+    } catch (error) { /* Clipboard can be unavailable in embedded browsers. */ }
+    showToast(`请手动复制网址：${url}`, 'warning', 7200);
   }
 
   async function sendTestNotification() {
@@ -1896,6 +1911,7 @@
     if (action === 'close-sidebar') return setSidebarOpen(false, { returnFocus: true });
     if (action === 'toggle-theme') { state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark'; saveState(); render(); return; }
     if (action === 'open-notification-center') { openNotificationCenter(); return; }
+    if (action === 'copy-site-url') { copySiteUrl(); return; }
     if (action === 'recheck-notification') {
       const status = notificationStatus();
       if (status.permission === 'granted') {
