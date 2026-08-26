@@ -17,7 +17,15 @@
   // OCR 仅在用户主动选择截图后按需加载；识别在浏览器本地完成，不上传图片。
   const OCR_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
   const isNativeApp = () => Boolean(window.Capacitor?.isNativePlatform?.());
-  const nativeNotifications = () => window.Capacitor?.Plugins?.LocalNotifications || null;
+  const nativeNotifications = () => {
+    if (!window.Capacitor) return null;
+    if (window.Capacitor.Plugins?.LocalNotifications) return window.Capacitor.Plugins.LocalNotifications;
+    try {
+      return window.Capacitor.registerPlugin?.('LocalNotifications') || null;
+    } catch (error) {
+      return null;
+    }
+  };
   let nativeNotificationPermission = 'unknown';
   let nativeNotificationListenersBound = false;
   const PERIODS = [
