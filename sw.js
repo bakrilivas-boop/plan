@@ -1,5 +1,5 @@
-const CACHE_NAME = 'campusflow-v1.0.1';
-const APP_SHELL = ['./', './index.html', './styles.css', './app.js', './manifest.json', './favicon.svg'];
+const CACHE_NAME = 'campusflow-v1.2.2';
+const APP_SHELL = ['./', './index.html', './styles.css?v=1.2.2', './app.js?v=1.2.2', './manifest.json', './favicon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -21,11 +21,43 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.pathname.endsWith('/sw.js')) return;
+  // OCR engine/model downloads are managed by the browser/CDN. Keeping the
+  // CampusFlow cache same-origin prevents a large model from crowding out the app shell.
+  if (url.origin !== self.location.origin) return;
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
+        return response;
+      }).catch(() => caches.match(event.request).then((cached) => cached || caches.match('./index.html')))
+    );
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+      if (response.ok) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+      }
       return response;
-    }).catch(() => caches.match('./index.html')))
+    }))
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (openClients) => {
+      const appUrl = new URL('./index.html#planner', self.location.href).href;
+      const existing = openClients.find((client) => client.url.startsWith(new URL('./', self.location.href).href));
+      if (existing) {
+        await existing.focus();
+        existing.postMessage({ type: 'campusflow-open-view', view: event.notification.data?.view || 'planner' });
+        return;
+      }
+      return clients.openWindow(appUrl);
+    })
   );
 });

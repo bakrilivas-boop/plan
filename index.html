@@ -8,11 +8,11 @@
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="manifest.json" />
     <title>大二计划 · CampusFlow</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=1.2.2" />
   </head>
   <body>
     <div class="app-shell" id="app">
-      <aside class="sidebar" id="sidebar">
+      <aside class="sidebar" id="sidebar" aria-label="应用菜单">
         <div class="brand">
           <div class="brand-mark">C</div>
           <div>
@@ -28,15 +28,15 @@
         </div>
 
         <nav class="main-nav" aria-label="主导航">
-          <button class="nav-item active" data-view="dashboard"><span class="nav-icon">⌂</span><span>总览</span></button>
-          <button class="nav-item" data-view="planner"><span class="nav-icon">✓</span><span>计划与任务</span><span class="nav-count" id="todo-count">0</span></button>
-          <button class="nav-item" data-view="timetable"><span class="nav-icon">▦</span><span>我的课表</span></button>
-          <button class="nav-item" data-view="calendar"><span class="nav-icon">◫</span><span>日历</span></button>
-          <button class="nav-item" data-view="habits"><span class="nav-icon">◒</span><span>日常习惯</span></button>
-          <button class="nav-item" data-view="notes"><span class="nav-icon">▤</span><span>灵感笔记</span></button>
-          <button class="nav-item" data-view="insights"><span class="nav-icon">⌁</span><span>学习统计</span></button>
-          <button class="nav-item" data-view="focus"><span class="nav-icon">◷</span><span>专注计时</span></button>
-          <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span><span>设置与备份</span></button>
+          <button class="nav-item active" data-view="dashboard" aria-current="page"><span class="nav-icon">⌂</span><span>总览</span></button>
+          <button class="nav-item" data-view="planner" aria-current="false"><span class="nav-icon">✓</span><span>计划与任务</span><span class="nav-count" id="todo-count">0</span></button>
+          <button class="nav-item" data-view="timetable" aria-current="false"><span class="nav-icon">▦</span><span>我的课表</span></button>
+          <button class="nav-item" data-view="calendar" aria-current="false"><span class="nav-icon">◫</span><span>日历</span></button>
+          <button class="nav-item" data-view="habits" aria-current="false"><span class="nav-icon">◒</span><span>日常习惯</span></button>
+          <button class="nav-item" data-view="notes" aria-current="false"><span class="nav-icon">▤</span><span>灵感笔记</span></button>
+          <button class="nav-item" data-view="insights" aria-current="false"><span class="nav-icon">⌁</span><span>学习统计</span></button>
+          <button class="nav-item" data-view="focus" aria-current="false"><span class="nav-icon">◷</span><span>专注计时</span></button>
+          <button class="nav-item" data-view="settings" aria-current="false"><span class="nav-icon">⚙</span><span>设置与备份</span></button>
         </nav>
 
         <div class="sidebar-spacer"></div>
@@ -51,17 +51,19 @@
         </div>
       </aside>
 
+      <button type="button" class="sidebar-backdrop" id="sidebar-backdrop" data-action="close-sidebar" aria-label="关闭菜单" hidden></button>
+
       <main class="main-content">
         <header class="topbar">
-          <button class="mobile-menu icon-btn" data-action="toggle-sidebar" aria-label="打开菜单">☰</button>
+          <button class="mobile-menu icon-btn" data-action="toggle-sidebar" aria-label="打开菜单" aria-controls="sidebar" aria-expanded="false">☰</button>
           <div class="breadcrumb"><span>2026 · 2027</span><b>/</b><strong id="page-title">总览</strong></div>
           <div class="topbar-actions">
-            <label class="search-box" for="global-search" aria-label="搜索">
-              <span>⌕</span><input id="global-search" type="search" placeholder="搜索任务、笔记…" autocomplete="off" />
+            <label class="search-box" for="global-search" aria-label="搜索" data-action="focus-search" tabindex="0">
+              <span aria-hidden="true">⌕</span><input id="global-search" type="search" aria-label="搜索任务和笔记" placeholder="搜索任务、笔记…" autocomplete="off" />
             </label>
             <button class="icon-btn" data-action="toggle-theme" aria-label="切换主题" title="切换主题">☼</button>
             <button class="icon-btn" data-action="go-view" data-view="settings" aria-label="打开设置" title="设置">⚙</button>
-            <button class="date-pill" data-action="go-today"><span class="calendar-icon">▣</span><span id="today-label"></span></button>
+            <button class="date-pill" data-action="go-today" aria-label="回到今天"><span class="calendar-icon" aria-hidden="true">▣</span><span id="today-label"></span></button>
           </div>
         </header>
 
@@ -74,7 +76,8 @@
     </div>
     <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
 
-    <input type="file" id="import-file" accept="application/json" hidden />
-    <script src="app.js"></script>
+    <input type="file" id="import-file" accept="application/json" aria-label="导入 JSON 备份" hidden />
+    <input type="file" id="ocr-file" accept="image/*" capture="environment" aria-label="选择课表截图" hidden />
+    <script src="app.js?v=1.2.2"></script>
   </body>
 </html>
