@@ -9,6 +9,27 @@
 - 直接双击 `index.html`：核心功能（包括本地保存、导入/导出）可用。
 - 若希望启用离线缓存和可安装 PWA，在此目录运行 `python -m http.server 8000`，然后访问 `http://localhost:8000`。
 
+## Android 应用与真正的手机通知
+
+仓库现在包含 Capacitor Android 构建配置。Android 版会直接申请系统 `POST_NOTIFICATIONS` 权限，并把未完成任务的截止时间和“现在做哪一步”写入手机本地通知调度器；任务修改、完成步骤或删除后会自动重新同步。通知由手机本地调度，不依赖网页保持打开，也不需要购买服务器。受 Android 省电策略影响，提醒可能存在少量时间偏差。
+
+每次推送到 `main` 后，GitHub Actions 的 **Build Android APK** 会自动生成调试安装包：
+
+1. 打开仓库的 **Actions → Build Android APK**。
+2. 进入最新成功运行。
+3. 在页面底部 **Artifacts** 下载 `CampusFlow-Android-debug`。
+4. 解压后安装 `app-debug.apk`；Android 首次安装可能需要允许浏览器或文件管理器“安装未知应用”。
+5. 打开 CampusFlow，点击顶部铃铛并允许系统通知。
+
+本地构建需要 Java 21 与 Android SDK：
+
+```powershell
+npm install
+npm run android:debug
+```
+
+APK 输出位置为 `android/app/build/outputs/apk/debug/app-debug.apk`。
+
 ## 已包含的功能
 
 - 总览：今日待办、习惯、课程提醒、目标进度与快捷新建。
@@ -26,7 +47,7 @@
 
 数据保存在当前浏览器的 `localStorage`，课表图片也只在当前浏览器中识别，不会上传服务器。建议每周在“设置与备份”中导出一次 JSON。
 
-> 提醒说明：当前版本的站内和设备通知会在网页打开期间检查；关闭浏览器后，纯静态 GitHub Pages 无法主动定时唤醒手机，重新打开会立即补查。要实现像微信一样“网页关闭后仍准时推送”，必须增加推送服务器（保存设备 PushSubscription 并按时发送 Web Push）或制作原生 Android App，这不是再申请一种前端权限就能完成。Android 和电脑浏览器可点击顶部铃铛授权；如果当前是 App 内置浏览器或厂商浏览器并显示“当前环境暂不支持”，请在提醒中心复制网址，再用 Chrome 或 Edge 打开。iPhone / iPad 需使用 iOS 16.4 或更高版本，先将网站“添加到主屏幕”，再从桌面图标打开并点击授权。浏览器曾被选择“拒绝”时，网页不能绕过系统再次弹框，请按提醒中心给出的步骤在网站权限中改为“允许”。拒绝权限不会影响站内提醒。
+> 提醒说明：Android APK 使用手机本地通知，应用关闭后仍可按任务截止时间触发，不需要服务器；网页版仍只能在页面打开期间自行检查，关闭网页后的远程 Web Push 才需要推送服务器。Android 和电脑浏览器可点击顶部铃铛授权；如果当前是 App 内置浏览器或厂商浏览器并显示“当前环境暂不支持”，请安装 Android APK，或在提醒中心复制网址后用 Chrome/Edge 打开。iPhone / iPad 仍需使用 iOS 16.4 或更高版本并添加到主屏幕。任何系统通知权限都必须由用户亲自允许。
 
 ## 发布到 GitHub Pages
 

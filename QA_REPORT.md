@@ -1,6 +1,6 @@
 # CampusFlow 静态 QA 报告
 
-检查范围：`index.html`、`app.js`、`styles.css`、`manifest.json`、`sw.js`。检查日期：2026-08-26。当前版本 `1.2.6`；本报告记录本轮实现与回归验证结果。
+检查范围：网页、Capacitor Android 配置、本地通知调度与 GitHub Actions APK 构建。检查日期：2026-08-26。当前版本 `1.3.0`；本报告记录本轮实现与回归验证结果。
 
 ## 已通过
 
@@ -14,7 +14,7 @@
 - 学期周次以 `profile.startDate` 所在周一为基准计算，而不是自然年周次；课表与总览使用同一学期周数。
 - 编辑日历事件时会根据原事件的 `type` 设置下拉框选项，保存后不会意外重置为“考试”。
 - JSON 导入会对 `tasks`、`courses` 及其他数组字段逐项回退旧数据；导入文件输入值会重置，因此可重复选择同一文件。
-- Service Worker 缓存键已升级为 `campusflow-v1.2.6`，激活时会清理旧版本缓存，避免长期命中旧静态资源。
+- Service Worker 缓存键已升级为 `campusflow-v1.3.0`，激活时会清理旧版本缓存，避免长期命中旧静态资源。
 - Service Worker 激活时只清理 `campusflow-*` 缓存，不会删除同一域名下其他 GitHub Pages 项目的离线缓存。
 - 360px 手机端课表已改为按天纵向卡片：七个日期标签、五个节次、课程/空白格可直接编辑或添加；实测没有页面横向溢出，桌面端仍保留七列网格。
 - 截图 OCR 已使用用户提供的 1260×2800 真实截图回归：正确识别“高等数学 / 周一第 1 节”“大学英语 III / 周二第 2 节”“数据结构 / 周三第 2–3 节”，并提取教师与教室；识别结果必须经预览确认后才会追加。
@@ -31,6 +31,9 @@
 - 通知首次授权成功后会立即发送包含当前任务下一步的确认通知；未授权时不会自动请求权限。
 - 对 App 内置浏览器/厂商浏览器缺少 Notification API 的情况，提醒中心会明确说明“当前环境暂不支持”，提供 Android 推荐的 Chrome/Edge 迁移步骤、复制网站地址按钮，并保留站内分步提醒兜底。
 - 测试通知不再把 `showNotification()` Promise 成功直接描述为“手机已显示”；会通过 `getNotifications({ tag })` 检查通知是否进入 Service Worker 队列，并区分 permission、service-worker、queue、system/window 阶段。浏览器已接收但手机未展示时，会指向 Android 的 Chrome 应用通知、网站通知和勿扰模式设置。
+- Android 模式通过 Capacitor Local Notifications 直接请求系统权限；为每个未完成任务生成稳定通知 ID，按截止日期/时间本地调度，写入标题、当前步骤和进度。任务保存、推进、完成和删除都会防抖重建待处理通知。
+- Android 13+ 声明 `POST_NOTIFICATIONS`；应用启动时建立高重要性“任务步骤提醒”渠道，点击通知会打开计划页。当前使用普通本地调度，不申请 Android 12+ 的精确闹钟特殊权限，因此省电模式下可能有少量时间偏差。
+- `.github/workflows/android-apk.yml` 会在 GitHub Actions 中使用 Node 24、Java 21、Capacitor 8 生成 Android 工程并上传 debug APK，规避本机缺少 Java/SDK 的构建环境限制。
 
 ## 高优先级（本轮已修复）
 
@@ -40,7 +43,7 @@
 | H2 | 周次曾按自然年计算。 | 学期周次核心信息错误。 | 已修复：以开学日期所在周一为基准计算学期周。 |
 | H3 | 编辑事件曾把类型重置为“考试”。 | 颜色/分类会被意外改写。 | 已修复：编辑表单为原类型 option 设置 `selected`。 |
 | H4 | 导入缺失字段曾覆盖为 `undefined`。 | 后续渲染可能抛异常。 | 已修复：逐字段回退旧数据并保留 profile/daily/focus/settings 的已有字段。 |
-| H5 | Service Worker 缓存键曾固定为旧版本。 | 客户端可能长期读取旧静态资源。 | 已修复：缓存版本升级到 `campusflow-v1.2.6`，激活时清理旧缓存。 |
+| H5 | Service Worker 缓存键曾固定为旧版本。 | 客户端可能长期读取旧静态资源。 | 已修复：缓存版本升级到 `campusflow-v1.3.0`，激活时清理旧缓存。 |
 
 ## 中优先级（数据正确性/体验）
 

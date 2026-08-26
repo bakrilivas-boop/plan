@@ -1,0 +1,15 @@
+{
+  "appId": "cn.campusflow.planner",
+  "appName": "CampusFlow 大二计划",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#08131f"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_campusflow",
+      "iconColor": "#0f766e"
+    }
+  }
+}

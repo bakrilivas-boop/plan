@@ -6,16 +6,20 @@
   'use strict';
 
   const STORAGE_KEY = 'campusflow-state-v1';
-  const APP_VERSION = '1.2.6';
+  const APP_VERSION = '1.3.0';
   const CURRENT_CHANGELOG = {
     version: APP_VERSION,
     date: '2026-08-25',
-    text: '新增设备通知全链路检测，区分网站权限、Service Worker 与手机系统通知问题。'
+    text: '新增 Android 应用模式：直接申请系统通知权限并在手机本地安排任务提醒。'
   };
   const DAY_NAMES = ['一', '二', '三', '四', '五', '六', '日'];
   const COLORS = ['teal', 'orange', 'purple', 'blue'];
   // OCR 仅在用户主动选择截图后按需加载；识别在浏览器本地完成，不上传图片。
   const OCR_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+  const isNativeApp = () => Boolean(window.Capacitor?.isNativePlatform?.());
+  const nativeNotifications = () => window.Capacitor?.Plugins?.LocalNotifications || null;
+  let nativeNotificationPermission = 'unknown';
+  let nativeNotificationListenersBound = false;
   const PERIODS = [
     { id: 1, label: '第 1 节', time: '08:00–09:40' },
     { id: 2, label: '第 2 节', time: '10:00–11:40' },
@@ -522,6 +526,7 @@
   let lastFocusState = null;
   let modalReturnFocus = null;
   let reminderTimer = null;
+  let nativeSyncTimer = null;
   let lastReminderCheckAt = 0;
   let lastReminderDay = todayKey();
   let lastNotificationDiagnostic = null;
@@ -531,6 +536,7 @@
     syncTaskCalendarEvents();
     state.updatedAt = new Date().toISOString();
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (error) { showToast('浏览器存储空间不足，请导出备份', 'error'); }
+    queueNativeNotificationSync();
   }
 
   function showToast(message, type, duration) {
@@ -590,6 +596,13 @@
   }
 
   function notificationStatus() {
+    if (isNativeApp()) {
+      const plugin = nativeNotifications();
+      if (!plugin) return { supported: false, permission: 'unsupported', label: 'Android 通知组件尚未加载，请重新启动应用' };
+      if (nativeNotificationPermission === 'granted') return { supported: true, permission: 'granted', label: 'Android 系统通知权限已启用' };
+      if (nativeNotificationPermission === 'denied') return { supported: true, permission: 'denied', label: 'Android 已拒绝通知权限，请在“应用信息 → 通知”中重新允许' };
+      return { supported: true, permission: 'default', label: '点击后申请 Android 系统通知权限' };
+    }
     const isAppleMobile = /iPad|iPhone|iPod/.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     const standalone = Boolean(window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true);
     if (isAppleMobile && !standalone) return { supported: false, permission: 'install-required', label: 'iPhone / iPad 请先“添加到主屏幕”，再从桌面图标打开并授权' };
@@ -603,21 +616,26 @@
 
   function notificationGuide() {
     const notification = notificationStatus();
+    const native = isNativeApp();
     const pending = reminderItems();
     const preview = pending[0]?.task;
     let stateClass = 'needs-action';
     let stateLabel = '等待授权';
-    let instructions = '<li><strong>点击“立即授权”</strong><span>浏览器会弹出系统通知请求。</span></li><li><strong>选择“允许”</strong><span>授权成功后会立刻发送一条测试通知。</span></li><li><strong>完成任务步骤</strong><span>每完成一步，通知会告诉你下一步做什么。</span></li>';
+    let instructions = `<li><strong>点击“立即授权”</strong><span>${native ? 'Android' : '浏览器'}会弹出系统通知请求。</span></li><li><strong>选择“允许”</strong><span>授权成功后会立刻发送一条测试通知。</span></li><li><strong>完成任务步骤</strong><span>每完成一步，通知会告诉你下一步做什么。</span></li>`;
     let action = '<button class="btn btn-primary" data-action="request-notification" data-autofocus>🔔 立即授权设备通知</button>';
     if (notification.permission === 'granted') {
       stateClass = 'success';
       stateLabel = '设备通知已开启';
-      instructions = '<li><strong>权限已连接</strong><span>CampusFlow 可以向这台设备发送通知。</span></li><li><strong>网页保持打开</strong><span>到期检查和逐步提醒会按设置频率运行。</span></li><li><strong>随时验证</strong><span>点击下方按钮发送一条测试通知。</span></li>';
+      instructions = native
+        ? '<li><strong>Android 权限已连接</strong><span>CampusFlow 可以直接向手机通知栏发送提醒。</span></li><li><strong>任务已经写入系统</strong><span>到期提醒由手机本地调度，应用关闭后仍可触发。</span></li><li><strong>随时验证</strong><span>点击下方按钮发送一条 Android 测试通知。</span></li>'
+        : '<li><strong>权限已连接</strong><span>CampusFlow 可以向这台设备发送通知。</span></li><li><strong>网页保持打开</strong><span>到期检查和逐步提醒会按设置频率运行。</span></li><li><strong>随时验证</strong><span>点击下方按钮发送一条测试通知。</span></li>';
       action = '<button class="btn btn-primary" data-action="test-notification" data-autofocus>发送测试通知</button>';
     } else if (notification.permission === 'denied') {
       stateClass = 'error';
-      stateLabel = '浏览器已阻止通知';
-      instructions = '<li><strong>打开网站权限</strong><span>点击地址栏左侧的网站图标或锁形图标，进入“网站设置”。</span></li><li><strong>把“通知”改为允许</strong><span>如果浏览器里没有该项，再检查手机或电脑的系统通知设置。</span></li><li><strong>刷新并重新检测</strong><span>回到本页刷新后，点击下方按钮确认状态。</span></li>';
+      stateLabel = native ? 'Android 已阻止通知' : '浏览器已阻止通知';
+      instructions = native
+        ? '<li><strong>长按 CampusFlow 图标</strong><span>进入“应用信息”。</span></li><li><strong>打开“通知”</strong><span>允许“任务步骤提醒”通知渠道，并关闭静默选项。</span></li><li><strong>返回应用重新检测</strong><span>再次打开提醒中心，发送测试通知。</span></li>'
+        : '<li><strong>打开网站权限</strong><span>点击地址栏左侧的网站图标或锁形图标，进入“网站设置”。</span></li><li><strong>把“通知”改为允许</strong><span>如果浏览器里没有该项，再检查手机或电脑的系统通知设置。</span></li><li><strong>刷新并重新检测</strong><span>回到本页刷新后，点击下方按钮确认状态。</span></li>';
       action = '<button class="btn btn-primary" data-action="recheck-notification" data-autofocus>我已允许，重新检测</button><button class="btn btn-ghost" data-action="go-view" data-view="settings">打开应用设置</button>';
     } else if (!notification.supported) {
       stateClass = 'error';
@@ -631,7 +649,10 @@
         : '<button class="btn btn-primary" data-action="copy-site-url" data-autofocus>复制网站地址</button><button class="btn btn-ghost" data-action="go-view" data-view="planner">先用站内分步提醒</button>';
     }
     const current = preview ? `<div class="notification-current"><span>当前最需要处理</span><strong>${escapeHtml(preview.title)}</strong><small>现在做：${escapeHtml(taskNextStep(preview))}</small></div>` : '<div class="notification-current"><span>当前状态</span><strong>暂无今天到期或逾期的任务</strong><small>授权后，新任务仍会按步骤提醒。</small></div>';
-    return `<div class="notification-guide"><div class="notification-guide-status ${stateClass}"><span class="notification-guide-icon">🔔</span><div><small>设备通知状态</small><strong>${escapeHtml(stateLabel)}</strong><p>${escapeHtml(notification.label)}</p></div></div>${current}<ol class="notification-guide-steps">${instructions}</ol><p class="notification-guide-note">隐私说明：权限只能由你亲自点击并在浏览器弹窗中选择“允许”，网站无法绕过系统替你授权。纯静态网页关闭后不能持续在后台运行，重新打开会立即补查。</p><div class="modal-foot notification-guide-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">稍后</button>${action}</div></div>`;
+    const privacy = native
+      ? '隐私说明：Android 通知权限仍需由你亲自选择“允许”。任务提醒只保存在本机并交给手机系统调度，不需要上传服务器。'
+      : '隐私说明：权限只能由你亲自点击并在浏览器弹窗中选择“允许”，网站无法绕过系统替你授权。纯静态网页关闭后不能持续在后台运行，重新打开会立即补查。';
+    return `<div class="notification-guide"><div class="notification-guide-status ${stateClass}"><span class="notification-guide-icon">🔔</span><div><small>设备通知状态</small><strong>${escapeHtml(stateLabel)}</strong><p>${escapeHtml(notification.label)}</p></div></div>${current}<ol class="notification-guide-steps">${instructions}</ol><p class="notification-guide-note">${privacy}</p><div class="modal-foot notification-guide-actions"><button type="button" class="btn btn-ghost" data-action="close-modal">稍后</button>${action}</div></div>`;
   }
 
   function openNotificationCenter() {
@@ -678,11 +699,118 @@
     settings.reminderSent = Object.fromEntries(entries);
   }
 
+  function nativeNotificationId(taskId) {
+    let hash = 2166136261;
+    for (const char of String(taskId || 'task')) {
+      hash ^= char.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return 10000 + (Math.abs(hash) % 2000000000);
+  }
+
+  function nativeTaskReminderDate(task) {
+    if (!isValidDateKey(task?.due)) return null;
+    const date = dateFromKey(task.due);
+    const [hours, minutes] = safeTime(task.time || '') ? task.time.split(':').map(Number) : [9, 0];
+    date.setHours(hours, minutes, 0, 0);
+    return date;
+  }
+
+  async function syncNativeTaskNotifications() {
+    const plugin = nativeNotifications();
+    if (!isNativeApp() || !plugin || nativeNotificationPermission !== 'granted' || state.settings.notifications !== true) return;
+    try {
+      const pending = await plugin.getPending();
+      const campusFlowPending = (pending?.notifications || []).filter((item) => item.extra?.campusFlowTask === true);
+      if (campusFlowPending.length) await plugin.cancel({ notifications: campusFlowPending.map((item) => ({ id: item.id })) });
+      const now = Date.now() + 1500;
+      const notifications = state.tasks.filter((task) => task.status !== 'done').map((task) => {
+        const at = nativeTaskReminderDate(task);
+        if (!at || at.getTime() <= now) return null;
+        return {
+          id: nativeNotificationId(task.id),
+          title: `该做下一步了 · ${task.title}`,
+          body: `现在做：${taskNextStep(task)}${taskStepProgress(task) ? `（${taskStepProgress(task)}）` : ''}`,
+          schedule: { at, allowWhileIdle: true },
+          channelId: 'campusflow-tasks',
+          actionTypeId: 'CAMPUSFLOW_TASK',
+          extra: { campusFlowTask: true, taskId: task.id, view: 'planner' }
+        };
+      }).filter(Boolean);
+      if (notifications.length) await plugin.schedule({ notifications });
+    } catch (error) {
+      console.warn('CampusFlow native notification sync failed', error);
+    }
+  }
+
+  function queueNativeNotificationSync() {
+    if (!isNativeApp()) return;
+    if (nativeSyncTimer) window.clearTimeout(nativeSyncTimer);
+    nativeSyncTimer = window.setTimeout(() => {
+      nativeSyncTimer = null;
+      syncNativeTaskNotifications();
+    }, 350);
+  }
+
+  async function initNativeNotifications() {
+    const plugin = nativeNotifications();
+    if (!isNativeApp() || !plugin) return;
+    try {
+      const permission = await plugin.checkPermissions();
+      nativeNotificationPermission = permission?.display === 'granted' ? 'granted' : permission?.display === 'denied' ? 'denied' : 'default';
+      await plugin.createChannel({
+        id: 'campusflow-tasks',
+        name: '任务步骤提醒',
+        description: '提醒当前任务应该完成的下一步',
+        importance: 5,
+        visibility: 1,
+        vibration: true
+      });
+      if (!nativeNotificationListenersBound) {
+        nativeNotificationListenersBound = true;
+        await plugin.registerActionTypes({
+          types: [{ id: 'CAMPUSFLOW_TASK', actions: [{ id: 'open', title: '打开任务' }] }]
+        });
+        await plugin.addListener('localNotificationActionPerformed', (event) => {
+          const taskId = event?.notification?.extra?.taskId;
+          if (taskId && state.tasks.some((task) => task.id === taskId)) searchTerm = '';
+          setView('planner');
+        });
+      }
+      if (nativeNotificationPermission === 'granted' && state.settings.notifications === true) queueNativeNotificationSync();
+      render();
+    } catch (error) {
+      console.warn('CampusFlow native notifications could not initialize', error);
+    }
+  }
+
   async function showDeviceNotification(title, options) {
     const status = notificationStatus();
     lastNotificationDiagnostic = { accepted: false, stage: 'permission', detail: status.label, at: Date.now() };
     if (!status.supported || status.permission !== 'granted') return false;
     const notificationOptions = { icon: './favicon.svg', badge: './favicon.svg', ...options };
+    const nativePlugin = nativeNotifications();
+    if (isNativeApp() && nativePlugin) {
+      try {
+        const id = 1900000000 + (Date.now() % 200000000);
+        await nativePlugin.schedule({
+          notifications: [{
+            id,
+            title,
+            body: String(notificationOptions.body || ''),
+            schedule: { at: new Date(Date.now() + 700), allowWhileIdle: true },
+            channelId: 'campusflow-tasks',
+            actionTypeId: 'CAMPUSFLOW_TASK',
+            extra: { ...(notificationOptions.data || {}), campusFlowImmediate: true }
+          }]
+        });
+        lastNotificationDiagnostic = { accepted: true, stage: 'android-local', detail: '通知已写入 Android 本地通知调度器', queued: true, at: Date.now() };
+        return true;
+      } catch (error) {
+        lastNotificationDiagnostic = { accepted: false, stage: 'android-local', detail: error?.message || 'Android 本地通知调度失败', at: Date.now() };
+        return false;
+      }
+    }
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       try {
         const registration = await Promise.race([
@@ -828,6 +956,34 @@
   }
 
   async function requestBrowserNotification() {
+    const nativePlugin = nativeNotifications();
+    if (isNativeApp() && nativePlugin) {
+      try {
+        const result = await nativePlugin.requestPermissions();
+        nativeNotificationPermission = result?.display === 'granted' ? 'granted' : result?.display === 'denied' ? 'denied' : 'default';
+        if (nativeNotificationPermission !== 'granted') {
+          state.settings.notifications = false;
+          saveState();
+          render();
+          openNotificationCenter();
+          return showToast('Android 未授予通知权限，请在“应用信息 → 通知”中允许', 'error', 6500);
+        }
+        state.settings.notifications = true;
+        saveState();
+        await syncNativeTaskNotifications();
+        const first = reminderItems()[0]?.task;
+        await showDeviceNotification('CampusFlow · 手机提醒已开启', {
+          body: first ? `${first.title}：现在做「${taskNextStep(first)}」` : 'Android 系统通知授权成功，任务提醒已经写入手机。',
+          data: { view: first ? 'planner' : 'dashboard', taskId: first?.id || '' }
+        });
+        render();
+        openNotificationCenter();
+        return showToast('Android 系统通知已开启，并已安排测试通知', 'success', 5500);
+      } catch (error) {
+        showToast(`Android 通知授权失败：${error?.message || '未知错误'}`, 'error', 6500);
+        return;
+      }
+    }
     const status = notificationStatus();
     if (!status.supported) return showToast(status.label, 'error');
     if (status.permission === 'denied') {
@@ -891,6 +1047,34 @@
     showToast(`请手动复制网址：${url}`, 'warning', 7200);
   }
 
+  async function recheckNotificationPermission() {
+    const plugin = nativeNotifications();
+    if (isNativeApp() && plugin) {
+      try {
+        const permission = await plugin.checkPermissions();
+        nativeNotificationPermission = permission?.display === 'granted' ? 'granted' : permission?.display === 'denied' ? 'denied' : 'default';
+        if (nativeNotificationPermission === 'granted') {
+          state.settings.notifications = true;
+          saveState();
+          await syncNativeTaskNotifications();
+          render();
+          openNotificationCenter();
+          showToast('已检测到 Android 通知权限，任务提醒已重新写入系统', 'success', 5200);
+          return;
+        }
+      } catch (error) { /* The guide below explains manual recovery. */ }
+      openNotificationCenter();
+      showToast('仍未检测到 Android 通知权限，请在“应用信息 → 通知”中允许', 'error', 6500);
+      return;
+    }
+    const status = notificationStatus();
+    if (status.permission === 'granted') requestBrowserNotification();
+    else {
+      openNotificationCenter();
+      showToast(status.permission === 'denied' ? '仍未检测到权限，请确认浏览器和系统通知均已设为允许，然后刷新页面' : status.label, 'error', 6500);
+    }
+  }
+
   async function sendTestNotification() {
     const status = notificationStatus();
     if (status.permission !== 'granted') return requestBrowserNotification();
@@ -911,7 +1095,10 @@
     if (reminderTimer) window.clearInterval(reminderTimer);
     reminderTimer = window.setInterval(() => checkReminders({ source: 'timer' }), 60 * 1000);
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) checkReminders({ source: 'resume' });
+      if (!document.hidden) {
+        checkReminders({ source: 'resume' });
+        if (isNativeApp()) initNativeNotifications();
+      }
     });
   }
 
@@ -1958,13 +2145,7 @@
     if (action === 'open-notification-center') { openNotificationCenter(); return; }
     if (action === 'copy-site-url') { copySiteUrl(); return; }
     if (action === 'recheck-notification') {
-      const status = notificationStatus();
-      if (status.permission === 'granted') {
-        requestBrowserNotification();
-      } else {
-        openNotificationCenter();
-        showToast(status.permission === 'denied' ? '仍未检测到权限，请确认浏览器和系统通知均已设为允许，然后刷新页面' : status.label, 'error', 6500);
-      }
+      recheckNotificationPermission();
       return;
     }
     if (action === 'request-notification') { requestBrowserNotification(); return; }
@@ -2364,7 +2545,7 @@
   $('#modal-backdrop')?.addEventListener('click', (event) => { if (event.target === event.currentTarget) closeModal(); });
 
   // PWA 在通过 http(s) 访问时启用；直接双击 index.html 仍可完整使用本地功能。
-  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  if (!isNativeApp() && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     // Bypass the old worker's CacheStorage entry during upgrades; otherwise a
     // cache-first worker can keep serving its own stale sw.js forever.
     navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
@@ -2375,5 +2556,6 @@
   render();
   syncSidebarA11y();
   initReminderChecks();
+  initNativeNotifications();
   window.CampusFlow = { get state() { return state; }, render, exportJson, exportCsv };
 })();
